@@ -144,6 +144,20 @@ body::after {
 }
 .bytes-line b { font-family: var(--font-mono); color: var(--accent-2); font-size: 12px; letter-spacing: 0; }
 
+/* 相位辐射提示（0.8.0） */
+.rad-chip {
+  margin-top: 6px; padding: 4px 8px; border-radius: 4px;
+  font-size: 10px; letter-spacing: 0.08em; line-height: 1.35;
+  color: #ffd9e6; background: rgba(190, 60, 110, 0.28);
+  border: 1px solid rgba(230, 110, 160, 0.55);
+  animation: radPulse 1.6s ease-in-out infinite;
+}
+.rad-chip.safe {
+  color: #d8ffe8; background: rgba(50, 150, 105, 0.24);
+  border-color: rgba(110, 220, 165, 0.5); animation: none;
+}
+@keyframes radPulse { 0%, 100% { opacity: 0.75; } 50% { opacity: 1; } }
+
 .hud-tr {
   position: absolute;
   top: max(var(--sp4), env(safe-area-inset-top));

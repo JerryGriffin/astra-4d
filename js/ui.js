@@ -17,7 +17,7 @@ function init() {
     'phase-fill', 'interact', 'panels', 'backpack-grid', 'printer-list',
     'build-list', 'research-items', 'research-blueprints', 'bytes-big',
     'module-title', 'module-body', 'module-sub', 'travel-list', 'death', 'death-cause',
-    'title', 'fx-fade'
+    'title', 'fx-fade', 'rad-chip'
   ].forEach((id) => { el[id] = $(id); });
 
   // 面板开关
@@ -64,6 +64,7 @@ function setPrompt(html) {
 
 // ---------------- HUD ----------------
 let lastO2 = -1, lastHp = -1, lastSoil = -1, lastW = '', lastBytes = -1, lastInteract = '';
+let lastRad = -1;
 function refreshHUD() {
   const p = A.player;
   const o2 = Math.round(p.oxygen), hp = Math.round(p.health), soil = Math.floor(p.soil);
@@ -90,6 +91,19 @@ function refreshHUD() {
     lastW = wStr;
   }
   if (p.bytes !== lastBytes) { el['bytes-num'].textContent = A.M.fmt(p.bytes); lastBytes = p.bytes; }
+  // 相位辐射提示（0.8.0）：0 不显示 / 1 辐射中 / 2 防护服生效
+  if (el['rad-chip']) {
+    const deep = Math.abs(p.w) > A.RADIATION_W;
+    const key = deep ? (p.suited ? 2 : 1) : 0;
+    if (key !== lastRad) {
+      lastRad = key;
+      el['rad-chip'].classList.toggle('hidden', key === 0);
+      el['rad-chip'].classList.toggle('safe', key === 2);
+      el['rad-chip'].textContent = key === 1
+        ? '⚠ 相位辐射 · 氧气 ×2、持续掉血'
+        : key === 2 ? '相位防护服 · 深层相位安全' : '';
+    }
+  }
 }
 
 function setInteract(text) {
@@ -287,10 +301,11 @@ function renderModule(mod) {
   el['module-title'].textContent = r.name || '庇护所';
   const power = (r.power ? '耗电 ' + r.power + 'A' : '') +
     (r.gen ? (r.gen.type === 'solar' ? '日照发电 ' : r.gen.type === 'wind' ? '风力发电 ' : r.gen.type === 'fuel' ? '烧碳发电 ' : '恒定发电 ') + r.gen.a + 'A' : '') +
-    (r.cap ? ' · 储电 ' + Math.round(mod.charge) + '/' + r.cap : '') +
+    (r.cap ? ' · 储电 ' + Math.round(mod.charge) + '/' + r.cap + '（放电 ' + (r.discharge || A.BATTERY_DISCHARGE) + 'A）' : '') +
     ((r.power || r.gen) ? ' · 电压 ' + (A.VOLTS[r.volt || 1] || 'LV') : '');
-  el['module-sub'].textContent = power + (mod.fused > 0 ? ' · 熔断器烧毁 ' + Math.ceil(mod.fused) + 's' : mod.powered ? ' · 通电' : ' · 断电');
-  el['module-sub'].classList.toggle('bad', (!mod.powered && (r.power > 0)) || mod.fused > 0);
+  const voltWarn = mod.lowVolt ? ' · 电压不足（电网 ' + (A.VOLTS[mod.netVolt] || 'LV') + '）降速 75%' : '';
+  el['module-sub'].textContent = power + voltWarn + (mod.fused > 0 ? ' · 熔断器烧毁 ' + Math.ceil(mod.fused) + 's' : mod.powered ? ' · 通电' : ' · 断电');
+  el['module-sub'].classList.toggle('bad', (!mod.powered && (r.power > 0)) || mod.fused > 0 || mod.lowVolt);
 
   let body = '';
   const jobBar = () => mod.job
@@ -310,22 +325,24 @@ function renderModule(mod) {
         <span class="sw" style="background:${A.itemColor(from)}"></span><span class="nm">${A.item(from).name}</span>
         <span class="arrow">→</span><span class="sw" style="background:${A.itemColor(to)}"></span><span class="nm">${A.item(to).name}</span>
         <span class="ct">×${A.player.count(from)}</span></button>`).join('')}</div>`;
-  } else if (mod.type === 'crusher') {
-    body = jobBar() + `<div class="hint">粉碎：2 份金属矿 → 3 份碎矿（碎矿熔炉 1:1 出金属），每次 ${Math.round(A.CRUSH_BY_CHANCE * 100)}% 概率副产一份稀有粉。</div>
+  } else if (mod.type === 'crusher' || mod.type === 'crusher_m') {
+    const ind = mod.type === 'crusher_m';
+    body = jobBar() + `<div class="hint">${ind ? 'MV 工业粉碎' : '粉碎'}：2 份金属矿 → ${ind ? A.CRUSH_M.qty : 3} 份碎矿（碎矿熔炉 1:1 出金属），每次 ${Math.round((ind ? A.CRUSH_M.by : A.CRUSH_BY_CHANCE) * 100)}% 概率副产一份稀有粉。${ind ? '需 MV 电源。' : ''}</div>
       <div class="rows">${Object.entries(A.CRUSH).map(([from, c]) => {
         const ok = A.player.count(from) >= 2;
         return `<button class="row ${ok ? '' : 'dim'}" data-mact="crush:${from}">
           <span class="sw" style="background:${A.itemColor(from)}"></span><span class="nm">${A.item(from).name}</span>
-          <span class="arrow">→</span><span class="sw" style="background:${A.itemColor(c.cr)}"></span><span class="nm">${A.item(c.cr).name}×3</span>
+          <span class="arrow">→</span><span class="sw" style="background:${A.itemColor(c.cr)}"></span><span class="nm">${A.item(c.cr).name}×${ind ? A.CRUSH_M.qty : 3}</span>
           <span class="ct">×${A.player.count(from)}</span></button>`;
       }).join('')}</div>`;
-  } else if (mod.type === 'washer') {
-    body = jobBar() + `<div class="hint">洗涤：3 份碎矿 + ${A.WASH_COMPOUND} 份化合物 → 4 份纯净矿（熔炉 1:1 出金属），每次 ${Math.round(A.WASH_BY_CHANCE * 100)}% 概率副产稀有粉。</div>
+  } else if (mod.type === 'washer' || mod.type === 'washer_m') {
+    const ind = mod.type === 'washer_m';
+    body = jobBar() + `<div class="hint">${ind ? 'MV 工业洗涤' : '洗涤'}：3 份碎矿 + ${A.WASH_COMPOUND} 份化合物 → ${ind ? A.WASH_M.qty : 4} 份纯净矿（熔炉 1:1 出金属），每次 ${Math.round((ind ? A.WASH_M.by : A.WASH_BY_CHANCE) * 100)}% 概率副产稀有粉。${ind ? '需 MV 电源。' : ''}</div>
       <div class="rows">${Object.entries(A.WASH).map(([from, w]) => {
         const ok = A.player.count(from) >= 3 && A.player.count('compound') >= A.WASH_COMPOUND;
         return `<button class="row ${ok ? '' : 'dim'}" data-mact="wash:${from}">
           <span class="sw" style="background:${A.itemColor(from)}"></span><span class="nm">${A.item(from).name}</span>
-          <span class="arrow">→</span><span class="sw" style="background:${A.itemColor(w.pu)}"></span><span class="nm">${A.item(w.pu).name}×4</span>
+          <span class="arrow">→</span><span class="sw" style="background:${A.itemColor(w.pu)}"></span><span class="nm">${A.item(w.pu).name}×${ind ? A.WASH_M.qty : 4}</span>
           <span class="ct">×${A.player.count(from)}</span></button>`;
       }).join('')}</div>`;
   } else if (mod.type === 'chemistry') {
@@ -406,10 +423,13 @@ function moduleClick(e) {
     const c = A.CRUSH[val];
     if (!c) return;
     if (A.player.count(val) < 2) { A.sfx.err(); toast('需要 2 份' + A.item(val).name); return; }
+    const ind = mod.type === 'crusher_m';
+    const qty = ind ? A.CRUSH_M.qty : 3;
+    const chance = ind ? A.CRUSH_M.by : A.CRUSH_BY_CHANCE;
     if (A.build.startJob(mod, {
-      total: 5, label: '粉碎 ' + A.item(val).name, out: c.cr, qty: 3, by: c.by,
+      total: 5, label: (ind ? '工业粉碎 ' : '粉碎 ') + A.item(val).name, out: c.cr, qty, by: c.by,
       onDone: (j) => {
-        if (j.by && Math.random() < A.CRUSH_BY_CHANCE) {
+        if (j.by && Math.random() < chance) {
           A.player.addItem(j.by, 1);
           toast('副产 ' + A.item(j.by).name);
         }
@@ -422,10 +442,13 @@ function moduleClick(e) {
     if (!w) return;
     if (A.player.count(val) < 3) { A.sfx.err(); toast('需要 3 份' + A.item(val).name); return; }
     if (A.player.count('compound') < A.WASH_COMPOUND) { A.sfx.err(); toast('需要 ' + A.WASH_COMPOUND + ' 份化合物作洗涤剂'); return; }
+    const ind = mod.type === 'washer_m';
+    const qty = ind ? A.WASH_M.qty : 4;
+    const chance = ind ? A.WASH_M.by : A.WASH_BY_CHANCE;
     if (A.build.startJob(mod, {
-      total: 6, label: '洗涤 ' + A.item(val).name, out: w.pu, qty: 4, by: w.by,
+      total: 6, label: (ind ? '工业洗涤 ' : '洗涤 ') + A.item(val).name, out: w.pu, qty, by: w.by,
       onDone: (j) => {
-        if (j.by && Math.random() < A.WASH_BY_CHANCE) {
+        if (j.by && Math.random() < chance) {
           A.player.addItem(j.by, 1);
           toast('副产 ' + A.item(j.by).name);
         }

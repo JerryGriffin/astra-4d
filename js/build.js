@@ -29,7 +29,28 @@ function put(g, geo, mat, x, y, z, rx, ry, rz) {
 }
 
 // ---------------- 模块外形 ----------------
+// MV/HV 变体：复用 LV 外形，放大并加电压标识灯
+const VARIANT = {
+  crusher_m:  ['crusher', 1.3, 'blue'],
+  washer_m:   ['washer', 1.3, 'blue'],
+  solar_mv:   ['solar_m', 1.35, 'blue'],
+  battery_mv: ['battery_m', 1.25, 'blue'],
+  battery_hv: ['battery_m', 1.5, 'yellow'],
+  rtg_hv:     ['rtg', 1.35, 'yellow']
+};
+
 function meshFor(type) {
+  if (VARIANT[type]) {
+    const [base, scale, lampMat] = VARIANT[type];
+    const inner = meshFor(base);
+    const outer = new THREE.Group();
+    outer.scale.setScalar(scale);
+    outer.add(inner.group);
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), MAT[lampMat]);
+    lamp.position.set(0, 2.1 / scale + 0.1, 0);
+    outer.add(lamp);
+    return { group: outer, spin: inner.spin };
+  }
   const g = new THREE.Group();
   const spin = [];
   switch (type) {
@@ -246,7 +267,7 @@ function add(type, x, z, rot, st) {
     type, def, mesh: group, spin,
     x, z, rot: rot || 0,
     charge: st && st.ch ? st.ch : 0,
-    eff: 1, net: -1,
+    eff: 1, net: -1, netVolt: 1, lowVolt: false,
     job: null, powered: false,
     fused: 0,
     bob: Math.random() * 6.28
@@ -396,10 +417,12 @@ function update(dt, w, px, pz, windFactor) {
 
   const nets = A.build.nets || [];
   for (const net of nets) {
-    let supply = 0, demand = 0, cap = 0, stored = 0;
+    let supply = 0, demand = 0, cap = 0, stored = 0, netVolt = 1;
     for (const m of net) {
       supply += genOutput(m);
       if (m.def.cap) { cap += m.def.cap; stored += m.charge; }
+      // 电网电压 = 所有电源（发电/电池）里最高的那档
+      if (m.def.gen || m.def.cap) netVolt = Math.max(netVolt, m.def.volt || 1);
       // 制氧机常开；其他用电器有加工任务时才吃电
       if (isLoad(m) && (m.job || m.type === 'oxygenator')) demand += m.def.power;
     }
@@ -407,7 +430,7 @@ function update(dt, w, px, pz, windFactor) {
     let fused = false;
     for (const m of net) if (m.fused > 0) { fused = true; break; }
     const wasFused = fused;
-    const discharge = net.filter((m) => m.def.cap).length * A.BATTERY_DISCHARGE;
+    const discharge = net.reduce((a, m) => a + (m.def.cap ? (m.def.discharge || A.BATTERY_DISCHARGE) : 0), 0);
     if (!fused && demand > supply + discharge + 0.05) {
       const sig = net.map((m) => m.type + ':' + m.x.toFixed(1) + ',' + m.z.toFixed(1)).sort().join('|');
       const over = A.build._over || (A.build._over = {});
@@ -449,7 +472,12 @@ function update(dt, w, px, pz, windFactor) {
       }
     }
     for (const m of net) {
-      m.eff = isLoad(m) ? (fused ? 0 : eff) : 1;
+      // 电压档（0.8.0）：机器额定电压高于电网电压 → 降到 25% 速度
+      const lv = isLoad(m) && (m.def.volt || 1) > netVolt;
+      m.lowVolt = lv;
+      m.netVolt = netVolt;
+      const base = fused ? 0 : eff;
+      m.eff = isLoad(m) ? (lv ? base * A.LOW_VOLT_EFF : base) : 1;
       m.powered = (supply > 0.01 || stored > 0.01) && !fused;
       if (m.fused > 0) m.fused = Math.max(0, m.fused - dt);
       // 用电器推进加工

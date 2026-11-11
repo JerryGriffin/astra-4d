@@ -87,6 +87,7 @@ A.PLANETS = [
       low: 0x4f8f74, mid: 0x9db877, high: 0xd9b183, rock: 0x8b7c74, crys: 0xa9a3cf
     },
     res: { organic: 12, compound: 26, resin: 22, laterite: 14, sphalerite: 8, malachite: 8, quartz: 6, ammonium: 4, graphite: 4 },
+    deep: { astronium: 3, titanite: 3, lithium: 2 },
     storm: 210
   },
   {
@@ -99,6 +100,7 @@ A.PLANETS = [
       low: 0x6b6a72, mid: 0x9a968d, high: 0xc9c1b2, rock: 0x55535c, crys: 0xb9b3d0
     },
     res: { laterite: 20, wolframite: 16, sphalerite: 12, compound: 18, resin: 12, quartz: 10, graphite: 8, ammonium: 6, astronium: 2 },
+    deep: { astronium: 5, wolframite: 4, titanite: 2 },
     storm: 260
   },
   {
@@ -111,6 +113,7 @@ A.PLANETS = [
       low: 0xa9673c, mid: 0xcf9455, high: 0xe8c78d, rock: 0x8a573c, crys: 0xe0b0b8
     },
     res: { malachite: 20, wolframite: 16, laterite: 18, compound: 16, quartz: 8, ammonium: 6, graphite: 5, titanite: 2 },
+    deep: { titanite: 5, wolframite: 4, astronium: 2 },
     storm: 190
   },
   {
@@ -123,6 +126,7 @@ A.PLANETS = [
       low: 0x4f4a7d, mid: 0x7d68a8, high: 0xb59ad0, rock: 0x3f3a5c, crys: 0x9ef0e0
     },
     res: { lithium: 18, titanite: 16, laterite: 14, compound: 18, resin: 12, graphite: 8, quartz: 6, astronium: 3 },
+    deep: { astronium: 6, lithium: 4, titanite: 3 },
     storm: 230
   },
   {
@@ -135,6 +139,7 @@ A.PLANETS = [
       low: 0x2f6f6c, mid: 0x5b9a90, high: 0x9dc7b6, rock: 0x27504f, crys: 0xc0e8ff
     },
     res: { hematite: 18, lithium: 14, laterite: 16, compound: 18, resin: 14, quartz: 6, ammonium: 5, astronium: 2 },
+    deep: { lithium: 5, hematite: 4, astronium: 3 },
     storm: 240
   },
   {
@@ -147,6 +152,7 @@ A.PLANETS = [
       low: 0x7fa2b2, mid: 0xb6cfd9, high: 0xe8f4f8, rock: 0x5f7d8c, crys: 0x8fd8f0
     },
     res: { titanite: 20, hematite: 18, laterite: 14, compound: 16, resin: 12, quartz: 8, ammonium: 4, astronium: 4 },
+    deep: { astronium: 8, titanite: 5, lithium: 3 },
     storm: 175
   },
   {
@@ -159,6 +165,7 @@ A.PLANETS = [
       low: 0x41502a, mid: 0x6b7838, high: 0x9aa45c, rock: 0x2e3520, crys: 0xc7e86a
     },
     res: { compound: 20, resin: 18, organic: 14, laterite: 16, astronium: 12, graphite: 6, ammonium: 5 },
+    deep: { astronium: 10, lithium: 4, titanite: 3 },
     storm: 120
   }
 ];

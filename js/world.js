@@ -410,16 +410,14 @@ function spawnNodes() {
   const total = table.reduce((a, [, v]) => a + v, 0);
   const rand = A.rng((state.seed ^ P.seed) + 0x2f1a);
   const count = A.mobile ? 80 : 112;
-  for (let i = 0; i < count; i++) {
-    let r = rand() * total, key = table[0][0];
-    for (const [k, v] of table) { r -= v; if (r <= 0) { key = k; break; } }
-    const ang = rand() * Math.PI * 2;
-    const rad = 11 + Math.sqrt(rand()) * 212;
-    const x = Math.cos(ang) * rad, z = Math.sin(ang) * rad;
-    const wPos = (rand() - 0.5) * 11.5;
-    const units = 2 + Math.floor(rand() * 4);
-    const deep = rand() < NODE_DEPTH.deep;
-    const depth = deep ? 1.0 + rand() * 3.1 : -0.45 + rand() * 0.35;
+
+  const pick = (tbl) => {
+    const tot = tbl.reduce((a, [, v]) => a + v, 0);
+    let r = rand() * tot, key = tbl[0][0];
+    for (const [k, v] of tbl) { r -= v; if (r <= 0) { key = k; break; } }
+    return key;
+  };
+  const push = (key, x, z, wPos, units, depth, deep) => {
     const top = height(x, z, wPos) - depth;
     const mesh = buildDeposit(key, units);
     const echoMat = new THREE.MeshBasicMaterial({
@@ -429,10 +427,38 @@ function spawnNodes() {
     const echoB = new THREE.Mesh(ECHO_GEO, echoMat.clone());
     nodeGroup.add(mesh, echoA, echoB);
     nodes.push({
-      type: key, x, z, wPos, ay: top, depth, units, mesh, echoA, echoB,
+      type: key, x, z, wPos, ay: top, depth, units, mesh, echoA, echoB, deep: !!deep,
       phase: rand() * Math.PI * 2, respawn: 0, harvested: false, mineT: 0,
       lastW: NaN, baseY: 0, echoW: NaN, echoYA: 0, echoYB: 0, exposed: depth < 0.2, vis: 1
     });
+  };
+
+  for (let i = 0; i < count; i++) {
+    const key = pick(table);
+    const ang = rand() * Math.PI * 2;
+    const rad = 11 + Math.sqrt(rand()) * 212;
+    const x = Math.cos(ang) * rad, z = Math.sin(ang) * rad;
+    const wPos = (rand() - 0.5) * 11.5;
+    const units = 2 + Math.floor(rand() * 4);
+    const deep = rand() < NODE_DEPTH.deep;
+    const depth = deep ? 1.0 + rand() * 3.1 : -0.45 + rand() * 0.35;
+    push(key, x, z, wPos, units, depth, false);
+  }
+
+  // 深层相位矿带（0.8.0）：只存在于 |w| > RADIATION_W 的相位，产出高阶矿
+  const deepTable = P.deep ? Object.entries(P.deep) : [];
+  const deepCount = Math.round(count * 0.22);
+  for (let i = 0; i < deepCount && deepTable.length; i++) {
+    const key = pick(deepTable);
+    const ang = rand() * Math.PI * 2;
+    const rad = 16 + Math.sqrt(rand()) * 200;
+    const x = Math.cos(ang) * rad, z = Math.sin(ang) * rad;
+    const sgn = rand() < 0.5 ? -1 : 1;
+    const wPos = sgn * (A.RADIATION_W + 0.15 + rand() * 1.5);
+    const units = 3 + Math.floor(rand() * 3);
+    // 深层矿带一半露头（滑到深相位就能看见），一半要挖
+    const depth = rand() < 0.45 ? -0.4 + rand() * 0.3 : 0.8 + rand() * 2.0;
+    push(key, x, z, wPos, units, depth, true);
   }
 }
 
@@ -449,7 +475,10 @@ function updateNodes(w, time, dt, px, pz) {
       if (r.respawn <= 0) {
         r.harvested = false;
         r.units = 2 + Math.floor(Math.random() * 4);
-        r.wPos = (Math.random() - 0.5) * 11.5;
+        // 深层矿带重生后仍留在深相位，普通矿回到相位中段
+        r.wPos = r.deep
+          ? (r.wPos < 0 ? -1 : 1) * (A.RADIATION_W + 0.15 + Math.random() * 1.5)
+          : (Math.random() - 0.5) * 11.5;
         r.depth = Math.random() < NODE_DEPTH.deep ? 1.0 + Math.random() * 3.1 : -0.45 + Math.random() * 0.35;
         r.ay = height(r.x, r.z, r.wPos) - r.depth;
         r.echoW = NaN; r.lastW = NaN; r.mineT = 0;

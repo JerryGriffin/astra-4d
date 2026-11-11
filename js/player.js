@@ -11,6 +11,7 @@ const player = {
   x: 0, y: 4, z: 0, w: 0, wVel: 0,
   vy: 0, grounded: true, facing: 0,
   oxygen: 100, oxygenMax: 100, health: 100,
+  radiated: false, suited: false, inNetwork: false,
   inv: {}, bytes: 0, unlocked: [],
   soil: 6, soilMax: 12,
   tethers: [],
@@ -486,15 +487,23 @@ function update(dt, input, time) {
     else player.grounded = false;
   }
 
-  // 氧气
+  // 氧气 + 相位辐射（0.8.0）：深层相位无防护时氧气消耗加倍、缓慢掉血；防护服免疫
   player.inNetwork = A.build.oxygenAt(player.x, player.z, player.w);
+  player.suited = count('hazmat') > 0;
+  player.radiated = Math.abs(player.w) > A.RADIATION_W && !player.suited;
+  const o2Rate = player.radiated ? A.RADIATION_O2 : 1;
   if (player.inNetwork) player.oxygen = Math.min(player.oxygenMax, player.oxygen + 16 * dt);
-  else player.oxygen = Math.max(0, player.oxygen - 2.1 * dt);
+  else player.oxygen = Math.max(0, player.oxygen - 2.1 * o2Rate * dt);
   if (player.oxygen <= 0) {
     player.health = Math.max(0, player.health - 9 * dt);
     if (player.health <= 0) die();
   } else if (player.health < 100 && player.inNetwork) {
     player.health = Math.min(100, player.health + 2.4 * dt);
+  }
+  // 辐射伤害：离网时每秒掉血（氧气管网内可以安全深入）
+  if (player.radiated && !player.inNetwork) {
+    player.health = Math.max(0, player.health - A.RADIATION_DMG * dt);
+    if (player.health <= 0) die();
   }
 
   // 宇航员

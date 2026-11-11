@@ -88,7 +88,8 @@ const ITEMS = {
   scrap:    { name: '金属碎料', en: 'Scrap', cat: 'special', color: 0x9aa0a6, bytes: 45 },
   tether:   { name: '系绳桩', en: 'Tether',  cat: 'special', color: 0x9be8ff, bytes: 0 },
   beacon:   { name: '信标',   en: 'Beacon',  cat: 'special', color: 0xffd166, bytes: 0 },
-  canister: { name: '罐',     en: 'Canister', cat: 'special', color: 0x8fe0b0, bytes: 0 }
+  canister: { name: '罐',     en: 'Canister', cat: 'special', color: 0x8fe0b0, bytes: 0 },
+  hazmat:   { name: '相位防护服', en: 'Phase Suit', cat: 'special', color: 0xb97fe0, bytes: 0 }
 };
 A.ITEMS = ITEMS;
 A.item = (id) => ITEMS[id] || { name: id, cat: 'raw', color: 0xcccccc, bytes: 0 };
@@ -133,9 +134,19 @@ A.WASH_BY_CHANCE = 0.25;    // 每批洗涤副产概率
 // ---------------- 电压档（0.6.0 引入，0.8.0 扩展 MV/HV） ----------------
 A.VOLTS = { 1: 'LV', 2: 'MV', 3: 'HV' };
 A.VOLT_NAMES = { 1: '低压', 2: '中压', 3: '高压' };
-A.BATTERY_DISCHARGE = 2;    // 每块电池最大放电 A
+A.BATTERY_DISCHARGE = 2;    // 每块电池最大放电 A（已被配方级 discharge 字段覆盖，保留为兼容默认值）
 A.FUSE_OVERLOAD_TIME = 2;   // 超载持续多少秒烧熔断器
 A.FUSE_RESET_TIME = 12;     // 熔断器冷却秒数
+
+// ---------------- 相位辐射（0.8.0） ----------------
+A.RADIATION_W = 4.5;        // |w| 超过此值进入深层相位带
+A.RADIATION_O2 = 2;         // 无防护时氧气消耗倍率
+A.RADIATION_DMG = 3;        // 无防护时每秒掉血
+
+// ---------------- 工业级（MV）产量：0.8.0 ----------------
+A.CRUSH_M = { qty: 4, by: 0.45 };   // 工业破碎机：2 矿 → 4 碎矿，副产 45%
+A.WASH_M = { qty: 5, by: 0.40 };    // 工业洗矿机：3 碎矿 → 5 纯净矿，副产 40%
+A.LOW_VOLT_EFF = 0.25;      // 电压不足时的效率倍率
 
 // ---------------- 化学实验室：双原料（部分需气体） ----------------
 A.CHEM = [
@@ -182,11 +193,12 @@ A.SOIL_YIELD = ['compound', 'resin', 'organic', 'clay', 'quartz', 'ammonium', 'g
 A.RECIPES = {
   // 背包打印机（随身，永远可用）
   tether:    { name: '系绳桩', tier: 0, kind: 'item', cost: { compound: 1 }, bytes: 0, desc: '把氧气网络向前延伸 17 米，最多 80 根' },
+  hazmat:    { name: '相位防护服', tier: 0, kind: 'item', cost: { advanced_circuit: 1, hardmetal: 1, graphene: 1 }, bytes: 3000, desc: '放在背包即生效：深层相位（|w|>4.5）的辐射不再伤你' },
   canister:  { name: '罐',     tier: 0, kind: 'item', cost: { resin: 1 }, bytes: 0, desc: '土壤容量 +12，地形工具的弹药' },
   beacon:    { name: '信标',   tier: 0, kind: 'item', cost: { quartz: 1 }, bytes: 0, desc: '在天空投出一道光柱，标记回家的路' },
-  solar_s:   { name: '小型太阳能板', tier: 0, kind: 'item', cost: { compound: 1 }, bytes: 0, desc: '放在背包侧槽，白天发电 0.5A' },
-  wind_s:    { name: '小型风力机',   tier: 0, kind: 'item', cost: { compound: 1 }, bytes: 0, desc: '有风时发电 0.5A' },
-  battery_s: { name: '小号电池',     tier: 0, kind: 'item', cost: { zinc: 1 }, bytes: 300, desc: '随身储电 32C，给背包打印机供电' },
+  solar_s:   { name: '小型太阳能板', tier: 0, kind: 'item', cost: { compound: 1 }, bytes: 0, volt: 1, desc: '放在背包侧槽，白天发电 0.5A' },
+  wind_s:    { name: '小型风力机',   tier: 0, kind: 'item', cost: { compound: 1 }, bytes: 0, volt: 1, desc: '有风时发电 0.5A' },
+  battery_s: { name: '小号电池',     tier: 0, kind: 'item', cost: { zinc: 1 }, bytes: 300, volt: 1, cap: 32, discharge: 1, desc: '随身储电 32C，给背包打印机供电' },
   oxygen_s:  { name: '氧气瓶',       tier: 0, kind: 'item', cost: { glass: 1 }, bytes: 300, desc: '氧气上限 +35，深入洞穴的底气' },
   worklight: { name: '工作灯',       tier: 0, kind: 'item', cost: { compound: 1 }, bytes: 200, desc: '连接电网后照亮四周' },
 
@@ -194,10 +206,10 @@ A.RECIPES = {
   printer_s: { name: '小型打印机', tier: 1, kind: 'module', cost: { compound: 2 }, bytes: 0, power: 0.5, slot: 'm', desc: '打印中型模块：制氧机、太阳能板、漫游车' },
   platform:  { name: '平台',       tier: 1, kind: 'module', cost: { compound: 1, resin: 1 }, bytes: 0, power: 0, slot: 'm', desc: '模块的落脚点，平台之间自动接线成电网' },
   oxygenator:{ name: '制氧机',     tier: 1, kind: 'module', cost: { compound: 1, resin: 1 }, bytes: 200, power: 1, slot: 'm', desc: '为整个电网提供氧气，并给附近系绳桩充氧' },
-  solar_m:   { name: '中型太阳能板', tier: 1, kind: 'module', cost: { copper: 1, glass: 1 }, bytes: 400, power: 0, gen: { type: 'solar', a: 2.0 }, slot: 'm', desc: '白天发电 2A，行星日照系数会放大或削弱它' },
-  wind_m:    { name: '中型风力机',   tier: 1, kind: 'module', cost: { zinc: 1, glass: 1 }, bytes: 400, power: 0, gen: { type: 'wind', a: 2.5 }, slot: 'm', desc: '有风时发电 2.5A，格拉西欧的风很值钱' },
-  battery_m: { name: '中型电池',     tier: 1, kind: 'module', cost: { zinc: 1, lithium: 1 }, bytes: 600, power: 0, cap: 64, slot: 'm', desc: '储电 64C，把白天的阳光留到夜里' },
-  gen_m:     { name: '中型发电机',   tier: 1, kind: 'module', cost: { zinc: 1, carbon: 1 }, bytes: 500, power: 0, gen: { type: 'fuel', a: 2.0 }, slot: 'm', desc: '烧碳发电 2A，没有太阳也没有风时的保底' },
+  solar_m:   { name: '中型太阳能板', tier: 1, kind: 'module', cost: { copper: 1, glass: 1 }, bytes: 400, power: 0, gen: { type: 'solar', a: 2.0 }, volt: 1, slot: 'm', desc: '白天发电 2A（LV），行星日照系数会放大或削弱它' },
+  wind_m:    { name: '中型风力机',   tier: 1, kind: 'module', cost: { zinc: 1, glass: 1 }, bytes: 400, power: 0, gen: { type: 'wind', a: 2.5 }, volt: 1, slot: 'm', desc: '有风时发电 2.5A（LV），格拉西欧的风很值钱' },
+  battery_m: { name: '中型电池',     tier: 1, kind: 'module', cost: { zinc: 1, lithium: 1 }, bytes: 600, power: 0, cap: 64, discharge: 2, volt: 1, slot: 'm', desc: '储电 64C，放电上限 2A（LV）' },
+  gen_m:     { name: '中型发电机',   tier: 1, kind: 'module', cost: { zinc: 1, carbon: 1 }, bytes: 500, power: 0, gen: { type: 'fuel', a: 2.0 }, volt: 1, slot: 'm', desc: '烧碳发电 2A（LV），没有太阳也没有风时的保底' },
   rover:     { name: '漫游车',       tier: 1, kind: 'module', cost: { aluminum: 2, compound: 2 }, bytes: 1000, power: 0, vehicle: 'rover', slot: 'l', desc: '四个轮子加一个座位，按住前进就能越野' },
   shuttle:   { name: '穿梭机',       tier: 1, kind: 'module', cost: { aluminum: 2, ceramic: 2 }, bytes: 1200, power: 0, vehicle: 'shuttle', slot: 'l', desc: '在七颗行星间往返，每颗行星的基地与地形独立保留' },
 
@@ -207,10 +219,18 @@ A.RECIPES = {
   smelter:   { name: '熔炉',       tier: 2, kind: 'module', cost: { resin: 2, compound: 1 }, bytes: 500, power: 1, slot: 'l', group: 'process', desc: '红土→铝、孔雀石→铜、石英→玻璃；碎矿与纯净矿也能熔' },
   crusher:   { name: '破碎机',     tier: 2, kind: 'module', cost: { aluminum: 1, compound: 2 }, bytes: 900, power: 1.5, slot: 'l', volt: 1, group: 'process', desc: '2 份金属矿粉碎成 3 份碎矿（碎矿熔炼 1:1 出金属），概率副产稀有粉' },
   washer:    { name: '洗矿机',     tier: 2, kind: 'module', cost: { aluminum: 2, circuit: 1, zinc: 1 }, bytes: 2500, power: 2, slot: 'l', volt: 1, group: 'process', desc: '3 份碎矿 + 1 化合物 → 4 份纯净矿，副产稀有粉；全链每矿约出 2 份金属' },
+
+  // —— 0.8.0：MV / HV 装备（需要同等或更高电压的电源） ——
+  solar_mv:   { name: '中压太阳能板', tier: 1, kind: 'module', cost: { magnalium: 2, glass: 2 }, bytes: 3000, power: 0, gen: { type: 'solar', a: 6.0 }, volt: 2, slot: 'm', desc: '白天发电 6A（MV），是 LV 电网升压的起点' },
+  battery_mv: { name: '中压电池',     tier: 1, kind: 'module', cost: { advanced_circuit: 1, nickel_steel: 1 }, bytes: 3500, power: 0, cap: 256, discharge: 8, volt: 2, slot: 'm', desc: '储电 256C，放电上限 8A（MV）' },
+  crusher_m:  { name: '工业破碎机',   tier: 2, kind: 'module', cost: { nickel_steel: 1, hardmetal: 1, advanced_circuit: 1 }, bytes: 4000, power: 3, slot: 'l', volt: 2, group: 'process', desc: 'MV：2 矿 → 4 碎矿，副产率 45%；电压不足会降到 25% 速度' },
+  washer_m:   { name: '工业洗矿机',   tier: 2, kind: 'module', cost: { magnalium: 2, advanced_circuit: 1 }, bytes: 5000, power: 4, slot: 'l', volt: 2, group: 'process', desc: 'MV：3 碎矿 + 1 化合物 → 5 纯净矿，副产率 40%' },
+  battery_hv: { name: '高压电池',     tier: 2, kind: 'module', cost: { advanced_circuit: 2, hardmetal: 2 }, bytes: 6000, power: 0, cap: 1024, discharge: 20, volt: 3, slot: 'l', desc: '储电 1024C，放电上限 20A（HV）' },
+  rtg_hv:     { name: '高压同位素发电机', tier: 2, kind: 'module', cost: { astronium: 2, hardmetal: 1, advanced_circuit: 1 }, bytes: 7000, power: 0, gen: { type: 'rtg', a: 12 }, volt: 3, slot: 'l', desc: '不挑昼夜不挑风，稳定 12A（HV），HV 电网的核心' },
   chemistry: { name: '化学实验室', tier: 2, kind: 'module', cost: { ceramic: 1, glass: 1, tungsten: 1 }, bytes: 1800, power: 1, slot: 'l', group: 'process', desc: '两种资源合成复合材料与合金，部分需要气体' },
   condenser: { name: '大气冷凝机', tier: 2, kind: 'module', cost: { glass: 1, plastic: 1, ceramic: 1 }, bytes: 2000, power: 1, slot: 'l', group: 'process', desc: '从大气里冷凝出氢气、氩气、甲烷……' },
   centrifuge:{ name: '土壤离心机', tier: 2, kind: 'module', cost: { aluminum: 1, compound: 2, zinc: 1 }, bytes: 1200, power: 1, slot: 'l', group: 'process', desc: '一罐土换一份基础资源，挖山的理由' },
-  rtg:       { name: '同位素发电机', tier: 2, kind: 'module', cost: { astronium: 1, titanium: 1, glass: 1 }, bytes: 4000, power: 0, gen: { type: 'rtg', a: 4 }, slot: 'l', desc: '不挑昼夜不挑风，稳定 4A —— 星辉矿的用处' }
+  rtg:       { name: '同位素发电机', tier: 2, kind: 'module', cost: { astronium: 1, titanium: 1, glass: 1 }, bytes: 4000, power: 0, gen: { type: 'rtg', a: 4 }, volt: 2, slot: 'l', desc: '不挑昼夜不挑风，稳定 4A（MV）—— 星辉矿的用处' }
 };
 
 A.recipe = (id) => A.RECIPES[id];
