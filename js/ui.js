@@ -577,7 +577,8 @@ function renderNet() {
   if (!n || !el['net-status']) return;
   if (!el['net-url'].value) el['net-url'].placeholder = n.defaultUrl();
   el['net-status'].textContent = n.online
-    ? '房间 ' + n.code + (n.isHost ? ' · 房主' : ' · 成员') + ' · ' + (n.peers.size + 1) + ' 人 · ' + (n.fails ? '重连中…' : '同步中')
+    ? '房间 ' + n.code + (n.isHost ? ' · 房主' : ' · 成员') + ' · ' + (n.peers.size + 1) + ' 人 · ' +
+      (n.fails ? '重连中…' : '同步中 ' + (n.latency || 0) + 'ms')
     : '未连接';
   el['net-status'].classList.toggle('on', n.online);
   const rows = n.peerRows();

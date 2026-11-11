@@ -28,6 +28,7 @@ const net = {
   inflight: false,
   fails: 0,
   err: '',
+  latency: 0,
   outbox: [],
   scene: null,
   avGroup: null,
@@ -91,6 +92,8 @@ const net = {
     this.isHost = !!r.host; this.seed = r.seed || 0;
     this.cursor = 0; this.fails = 0; this.inflight = false;
     this.outbox = [];
+    // 重复建房/加入时先清掉旧队友的宇航员，避免场景里残留孤儿模型
+    for (const p of this.peers.values()) this._removeAvatar(p);
     this.peers.clear();
     this._applyPeers(r.room && r.room.peers);
     this.lastSync = 0;
@@ -131,11 +134,13 @@ const net = {
     this.lastSync = t; this.inflight = true;
     const events = this.outbox.splice(0, 8);
     let r = null;
+    const t0 = performance.now();
     try {
       r = await this._post('/api/sync', {
         code: this.code, peerId: this.peerId, secret: this.secret,
         name: this.name, state: this.state(), cursor: this.cursor, events
       });
+      this.latency = Math.max(1, Math.round(performance.now() - t0));
     } catch (e) {
       this.inflight = false;
       this.fails++;
@@ -145,6 +150,7 @@ const net = {
       return;
     }
     this.inflight = false;
+    if (!this.online) return; // 已被 leave() 取消，不再应用迟到的响应
     if (!r || !r.ok) {
       if (events.length) this.outbox = events.concat(this.outbox).slice(0, 20);
       this.fails++;
@@ -165,6 +171,8 @@ const net = {
   _onEvent(ev) {
     const d = ev.data || {};
     if (ev.type === 'chat') {
+      // 自己的发言已在本地回显；服务端会把本次请求的事件一并回传，不跳过会重复
+      if (ev.from === this.peerId) return;
       this._push(d.by || '队友', d.t || '');
     } else if (ev.type === 'join') {
       if (ev.from !== this.peerId) this._sys((d.name || '玩家') + ' 加入了房间');
@@ -251,6 +259,8 @@ const net = {
     label.position.y = 2.55;
     g.add(label);
     g.visible = false;
+    // 只记录本模块自己创建的材质，清理时不能碰 player.js 共享的 INK 材质
+    g.userData.netMats = [ring.material, label.material];
     this.avGroup.add(g);
     pr.av = g; pr.label = label;
   },
@@ -258,13 +268,12 @@ const net = {
   _removeAvatar(pr) {
     if (pr.av && this.avGroup) {
       this.avGroup.remove(pr.av);
-      pr.av.traverse((o) => {
-        if (o.geometry && o.geometry.dispose) o.geometry.dispose();
-        if (o.material) {
-          if (o.material.map) o.material.map.dispose();
-          if (o.material.dispose) o.material.dispose();
-        }
-      });
+      const own = (pr.av.userData && pr.av.userData.netMats) || [];
+      for (const mat of own) {
+        if (mat.map) mat.map.dispose();
+        if (mat.dispose) mat.dispose();
+      }
+      pr.av.traverse((o) => { if (o.geometry && o.geometry.dispose) o.geometry.dispose(); });
     }
     pr.av = null; pr.label = null;
   },
@@ -273,6 +282,14 @@ const net = {
     this.scene = scene;
     this.avGroup = new THREE.Group();
     scene.add(this.avGroup);
+    // 关页/切走时用 sendBeacon 立刻退房，否则队友要等 45s 心跳超时才能看到你离线
+    window.addEventListener('pagehide', () => {
+      if (!this.online || !this.code) return;
+      try {
+        const body = JSON.stringify({ code: this.code, peerId: this.peerId, secret: this.secret });
+        navigator.sendBeacon(this.url.replace(/\/$/, '') + '/api/leave', new Blob([body], { type: 'application/json' }));
+      } catch (e) { /* 忽略 */ }
+    });
   },
 
   // 每帧：只做远端位置插值（轮询由定时器驱动，见 _attach）

@@ -302,6 +302,15 @@ const server = http.createServer(async (req, res) => {
   return json(req, res, { ok: false, msg: '未知接口' }, 404);
 });
 
+server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE') {
+    console.error('端口 ' + PORT + ' 已被占用。换一个：PORT=9000 node coop-server.mjs');
+  } else {
+    console.error('服务启动失败：', e.message);
+  }
+  process.exit(1);
+});
+
 server.listen(PORT, () => {
   console.log('ASTRA·4D 联机服务已启动：http://localhost:' + PORT + '/');
   console.log('房间码 4 位，同端口托管游戏静态文件；Ctrl+C 结束。');

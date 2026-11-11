@@ -433,7 +433,9 @@ function update(dt, w, px, pz, windFactor) {
     const discharge = net.reduce((a, m) => a + (m.def.cap ? (m.def.discharge || A.BATTERY_DISCHARGE) : 0), 0);
     if (!fused && demand > supply + discharge + 0.05) {
       const sig = net.map((m) => m.type + ':' + m.x.toFixed(1) + ',' + m.z.toFixed(1)).sort().join('|');
-      const over = A.build._over || (A.build._over = {});
+      let over = A.build._over || (A.build._over = {});
+      // 防泄漏：电网拓扑频繁变动时限制键数量
+      if (Object.keys(over).length > 96) { A.build._over = {}; over = A.build._over; }
       over[sig] = (over[sig] || 0) + dt;
       if (over[sig] >= A.FUSE_OVERLOAD_TIME) {
         over[sig] = 0;

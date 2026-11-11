@@ -789,8 +789,9 @@ body.touch .inv-grid { grid-template-columns: 1fr 1fr; }
 }
 
 @media (max-width: 520px) {
-  .hud-tr { gap: 4px; }
+  .hud-tr { gap: 4px; flex-wrap: wrap; justify-content: flex-end; max-width: 64vw; row-gap: 4px; }
   .nav-btn { padding: 7px 10px; font-size: 11px; }
+  .net-log { height: 150px; }
   .bar { height: 7px; }
   .phase { width: 196px; padding: 8px 12px 6px; }
   .phase-f span:nth-child(2) { display: none; }

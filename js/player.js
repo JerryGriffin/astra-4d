@@ -487,6 +487,10 @@ function update(dt, input, time) {
     else player.grounded = false;
   }
 
+  // 兜底死亡判定：任何来源把血压到 0 都当帧结算。
+  // 必须放在回血之前——否则在氧气管网里，下一步的 +2.4/s 会把 0 血救回 0.04，永久跳过死亡。
+  if (player.health <= 0 && !player.dead) { die(); return; }
+
   // 氧气 + 相位辐射（0.8.0）：深层相位无防护时氧气消耗加倍、缓慢掉血；防护服免疫
   player.inNetwork = A.build.oxygenAt(player.x, player.z, player.w);
   player.suited = count('hazmat') > 0;
@@ -496,14 +500,14 @@ function update(dt, input, time) {
   else player.oxygen = Math.max(0, player.oxygen - 2.1 * o2Rate * dt);
   if (player.oxygen <= 0) {
     player.health = Math.max(0, player.health - 9 * dt);
-    if (player.health <= 0) die();
+    if (player.health <= 0) { die(); return; }
   } else if (player.health < 100 && player.inNetwork) {
     player.health = Math.min(100, player.health + 2.4 * dt);
   }
   // 辐射伤害：离网时每秒掉血（氧气管网内可以安全深入）
   if (player.radiated && !player.inNetwork) {
     player.health = Math.max(0, player.health - A.RADIATION_DMG * dt);
-    if (player.health <= 0) die();
+    if (player.health <= 0) { die(); return; }
   }
 
   // 宇航员
