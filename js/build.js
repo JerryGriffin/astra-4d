@@ -99,6 +99,20 @@ function meshFor(type) {
       put(g, box(1.5, 0.5, 0.16, 0.05), MAT.dark, 0, 0.55, 1.0);
       break;
     }
+    case 'washer': {
+      put(g, box(2.2, 0.8, 2.0, 0.16), MAT.cream2, 0, 0.7, 0);
+      put(g, new THREE.CylinderGeometry(0.95, 1.05, 1.9, 12, 1, true), MAT.glass, 0, 1.75, 0);
+      put(g, new THREE.CylinderGeometry(0.99, 0.99, 0.16, 12), MAT.metal, 0, 0.86, 0);
+      put(g, new THREE.CylinderGeometry(0.06, 0.06, 2.2, 6), MAT.metal, 0, 1.95, 0);
+      for (let i = 0; i < 3; i++) {
+        const blade = put(g, box(1.5, 0.1, 0.24, 0.03), MAT.orange, 0, 1.25 + i * 0.45, 0);
+        blade.rotation.y = i * 1.05;
+        spin.push({ obj: blade, axis: 'y', speed: 2.2 });
+      }
+      put(g, new THREE.CylinderGeometry(0.32, 0.32, 0.32, 10), MAT.blue, 0, 2.98, 0);
+      put(g, box(0.5, 0.34, 0.06, 0.03), MAT.yellow, 0.75, 1.05, 0.95);
+      break;
+    }
     case 'chemistry': {
       put(g, box(2.4, 0.55, 1.9, 0.12), MAT.cream2, 0, 0.5, 0);
       put(g, new THREE.CylinderGeometry(0.5, 0.5, 1.7, 10), MAT.glass, -0.65, 1.5, 0);

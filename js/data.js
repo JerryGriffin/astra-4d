@@ -68,6 +68,21 @@ const ITEMS = {
   manganese_dust: { name: '锰粉',   en: 'Manganese Dust', cat: 'dust', color: 0x9a8a96, bytes: 150 },
   gallium_dust:   { name: '镓粉',   en: 'Gallium Dust',   cat: 'dust', color: 0x9ab8d8, bytes: 150 },
   rare_earth_dust:{ name: '稀土粉', en: 'Rare Earth Dust', cat: 'dust', color: 0xc9a48a, bytes: 200 },
+  // —— 洗矿链（GregTech 0.7.0）：纯净矿 ——
+  pu_laterite:   { name: '纯净红土',   en: 'Purified Laterite',   cat: 'dust', color: 0x9c4a37, bytes: 0 },
+  pu_sphalerite: { name: '纯净闪锌矿', en: 'Purified Sphalerite', cat: 'dust', color: 0x83927c, bytes: 0 },
+  pu_wolframite: { name: '纯净钨锰矿', en: 'Purified Wolframite', cat: 'dust', color: 0x60606f, bytes: 0 },
+  pu_malachite:  { name: '纯净孔雀石', en: 'Purified Malachite',  cat: 'dust', color: 0x45c4a0, bytes: 0 },
+  pu_hematite:   { name: '纯净赤铁矿', en: 'Purified Hematite',   cat: 'dust', color: 0xbf5a48, bytes: 0 },
+  pu_titanite:   { name: '纯净榍石',   en: 'Purified Titanite',   cat: 'dust', color: 0x9a86c8, bytes: 0 },
+  // —— 合金与电子（0.7.0）：稀有粉与电路板的下游 ——
+  magnalium:        { name: '镁铝合金',   en: 'Magnalium',         cat: 'composite', color: 0xb2bcc6, bytes: 340 },
+  nickel_steel:     { name: '镍钢',       en: 'Nickel Steel',      cat: 'composite', color: 0x8c949e, bytes: 380 },
+  mangalloy:        { name: '锰钢',       en: 'Mangalloy',         cat: 'composite', color: 0x7f828a, bytes: 360 },
+  hardmetal:        { name: '硬质合金',   en: 'Hardmetal',         cat: 'composite', color: 0x5c626d, bytes: 420 },
+  circuit:          { name: '电路板',     en: 'Circuit Board',     cat: 'composite', color: 0x3f8f6a, bytes: 260 },
+  advanced_circuit: { name: '进阶电路板', en: 'Advanced Circuit',  cat: 'composite', color: 0x6fd0a0, bytes: 520 },
+  magnet:           { name: '稀土磁体',   en: 'Rare Earth Magnet', cat: 'composite', color: 0x9a5fa8, bytes: 380 },
   // —— 工具 / 特殊 ——
   soil:     { name: '土壤',   en: 'Soil',    cat: 'special', color: 0xa9805c, bytes: 0 },
   scrap:    { name: '金属碎料', en: 'Scrap', cat: 'special', color: 0x9aa0a6, bytes: 45 },
@@ -86,7 +101,10 @@ A.SMELT = {
   quartz: 'glass', clay: 'ceramic', organic: 'carbon',
   // 碎矿 1:1 熔炼（破碎机 2 矿→3 碎矿，净赚 50%）
   cr_laterite: 'aluminum', cr_sphalerite: 'zinc', cr_malachite: 'copper',
-  cr_wolframite: 'tungsten', cr_hematite: 'iron', cr_titanite: 'titanium'
+  cr_wolframite: 'tungsten', cr_hematite: 'iron', cr_titanite: 'titanium',
+  // 纯净矿 1:1 熔炼（洗矿机 3 碎矿→4 纯净矿，全链每矿约 2 份金属）
+  pu_laterite: 'aluminum', pu_sphalerite: 'zinc', pu_malachite: 'copper',
+  pu_wolframite: 'tungsten', pu_hematite: 'iron', pu_titanite: 'titanium'
 };
 
 // ---------------- 破碎机（GregTech 0.6.0）：2 矿 → 3 碎矿 + 副产粉 ----------------
@@ -99,6 +117,18 @@ A.CRUSH = {
   titanite:   { cr: 'cr_titanite',   by: 'rare_earth_dust' }
 };
 A.CRUSH_BY_CHANCE = 0.35;   // 每次粉碎（2 矿）副产概率 ≈ 每矿 15%
+
+// ---------------- 洗矿机（GregTech 0.7.0）：3 碎矿 + 1 化合物 → 4 纯净矿 ----------------
+A.WASH = {
+  cr_laterite:   { pu: 'pu_laterite',   by: 'magnesium_dust' },
+  cr_sphalerite: { pu: 'pu_sphalerite', by: 'gallium_dust' },
+  cr_malachite:  { pu: 'pu_malachite',  by: 'cobalt_dust' },
+  cr_wolframite: { pu: 'pu_wolframite', by: 'manganese_dust' },
+  cr_hematite:   { pu: 'pu_hematite',   by: 'nickel_dust' },
+  cr_titanite:   { pu: 'pu_titanite',   by: 'rare_earth_dust' }
+};
+A.WASH_COMPOUND = 1;        // 每批洗涤消耗的化合物
+A.WASH_BY_CHANCE = 0.25;    // 每批洗涤副产概率
 
 // ---------------- 电压档（0.6.0 引入，0.8.0 扩展 MV/HV） ----------------
 A.VOLTS = { 1: 'LV', 2: 'MV', 3: 'HV' };
@@ -120,7 +150,15 @@ A.CHEM = [
   { out: 'hydrazine', a: 'ammonium', b: 'ammonium', gas: 'hydrogen' },
   { out: 'graphene', a: 'graphite', b: 'hydrazine' },
   { out: 'diamond', a: 'graphene', b: 'graphene' },
-  { out: 'nanocarbon', a: 'titanium_alloy', b: 'steel', gas: 'helium' }
+  { out: 'nanocarbon', a: 'titanium_alloy', b: 'steel', gas: 'helium' },
+  // —— 0.7.0：稀有粉 → 合金，硅酮/铜 → 电路板 ——
+  { out: 'magnalium', a: 'aluminum', b: 'magnesium_dust' },
+  { out: 'nickel_steel', a: 'iron', b: 'nickel_dust' },
+  { out: 'mangalloy', a: 'iron', b: 'manganese_dust' },
+  { out: 'hardmetal', a: 'tungsten_carbide', b: 'cobalt_dust' },
+  { out: 'circuit', a: 'copper', b: 'silicone' },
+  { out: 'advanced_circuit', a: 'circuit', b: 'gallium_dust' },
+  { out: 'magnet', a: 'rare_earth_dust', b: 'steel' }
 ];
 
 // ---------------- 大气冷凝（每颗行星可冷凝的气体） ----------------
@@ -166,11 +204,12 @@ A.RECIPES = {
   // 中型打印机
   printer_m: { name: '中型打印机', tier: 2, kind: 'module', cost: { aluminum: 1, compound: 1 }, bytes: 800, power: 1, slot: 'l', desc: '打印大型模块：研究舱、熔炉、化学实验室' },
   research:  { name: '研究舱',     tier: 2, kind: 'module', cost: { compound: 2 }, bytes: 500, power: 1, slot: 'l', desc: '把资源样本转成字节，字节解锁蓝图' },
-  smelter:   { name: '熔炉',       tier: 2, kind: 'module', cost: { resin: 2, compound: 1 }, bytes: 500, power: 1, slot: 'l', desc: '红土→铝、孔雀石→铜、石英→玻璃；碎矿也能熔' },
-  crusher:   { name: '破碎机',     tier: 2, kind: 'module', cost: { aluminum: 1, compound: 2 }, bytes: 900, power: 1.5, slot: 'l', volt: 1, desc: '2 份金属矿粉碎成 3 份碎矿（碎矿熔炼 1:1 出金属），概率副产稀有粉' },
-  chemistry: { name: '化学实验室', tier: 2, kind: 'module', cost: { ceramic: 1, glass: 1, tungsten: 1 }, bytes: 1800, power: 1, slot: 'l', desc: '两种资源合成复合材料，部分需要气体' },
-  condenser: { name: '大气冷凝机', tier: 2, kind: 'module', cost: { glass: 1, plastic: 1, ceramic: 1 }, bytes: 2000, power: 1, slot: 'l', desc: '从大气里冷凝出氢气、氩气、甲烷……' },
-  centrifuge:{ name: '土壤离心机', tier: 2, kind: 'module', cost: { aluminum: 1, compound: 2, zinc: 1 }, bytes: 1200, power: 1, slot: 'l', desc: '一罐土换一份基础资源，挖山的理由' },
+  smelter:   { name: '熔炉',       tier: 2, kind: 'module', cost: { resin: 2, compound: 1 }, bytes: 500, power: 1, slot: 'l', group: 'process', desc: '红土→铝、孔雀石→铜、石英→玻璃；碎矿与纯净矿也能熔' },
+  crusher:   { name: '破碎机',     tier: 2, kind: 'module', cost: { aluminum: 1, compound: 2 }, bytes: 900, power: 1.5, slot: 'l', volt: 1, group: 'process', desc: '2 份金属矿粉碎成 3 份碎矿（碎矿熔炼 1:1 出金属），概率副产稀有粉' },
+  washer:    { name: '洗矿机',     tier: 2, kind: 'module', cost: { aluminum: 2, circuit: 1, zinc: 1 }, bytes: 2500, power: 2, slot: 'l', volt: 1, group: 'process', desc: '3 份碎矿 + 1 化合物 → 4 份纯净矿，副产稀有粉；全链每矿约出 2 份金属' },
+  chemistry: { name: '化学实验室', tier: 2, kind: 'module', cost: { ceramic: 1, glass: 1, tungsten: 1 }, bytes: 1800, power: 1, slot: 'l', group: 'process', desc: '两种资源合成复合材料与合金，部分需要气体' },
+  condenser: { name: '大气冷凝机', tier: 2, kind: 'module', cost: { glass: 1, plastic: 1, ceramic: 1 }, bytes: 2000, power: 1, slot: 'l', group: 'process', desc: '从大气里冷凝出氢气、氩气、甲烷……' },
+  centrifuge:{ name: '土壤离心机', tier: 2, kind: 'module', cost: { aluminum: 1, compound: 2, zinc: 1 }, bytes: 1200, power: 1, slot: 'l', group: 'process', desc: '一罐土换一份基础资源，挖山的理由' },
   rtg:       { name: '同位素发电机', tier: 2, kind: 'module', cost: { astronium: 1, titanium: 1, glass: 1 }, bytes: 4000, power: 0, gen: { type: 'rtg', a: 4 }, slot: 'l', desc: '不挑昼夜不挑风，稳定 4A —— 星辉矿的用处' }
 };
 

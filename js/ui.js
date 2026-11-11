@@ -196,12 +196,14 @@ function renderPrinter() {
   el['printer-list'].innerHTML = ids.map(recipeHTML).join('');
 }
 function renderBuild() {
-  const list = [1, 2].map((tier) => {
-    const ids = A.recipeIds.filter((id) => A.RECIPES[id].tier === tier);
-    return `<div class="tier"><div class="tier-h">${tier === 1 ? '小型打印机' : '中型打印机'}</div>
-      <div class="cards">${ids.map(recipeHTML).join('')}</div></div>`;
-  }).join('');
-  el['build-list'].innerHTML = list;
+  const t1 = A.recipeIds.filter((id) => A.RECIPES[id].tier === 1);
+  const t2 = A.recipeIds.filter((id) => A.RECIPES[id].tier === 2);
+  const base = t2.filter((id) => A.RECIPES[id].group !== 'process');
+  const proc = t2.filter((id) => A.RECIPES[id].group === 'process');
+  el['build-list'].innerHTML =
+    `<div class="tier"><div class="tier-h">小型打印机</div><div class="cards">${t1.map(recipeHTML).join('')}</div></div>` +
+    `<div class="tier"><div class="tier-h">中型打印机 · 建造</div><div class="cards">${base.map(recipeHTML).join('')}</div></div>` +
+    `<div class="tier"><div class="tier-h">中型打印机 · 加工</div><div class="cards">${proc.map(recipeHTML).join('')}</div></div>`;
 }
 
 function craftClick(e, from) {
@@ -303,7 +305,7 @@ function renderModule(mod) {
           <span class="sw" style="background:${A.itemColor(k)}"></span><span class="nm">${A.item(k).name}</span>
           <span class="ct">×${A.player.inv[k]}</span><span class="gain">+${A.item(k).bytes}</span></button>`).join('') || '<div class="empty">没有可研究的样本</div>'}</div>`;
   } else if (mod.type === 'smelter') {
-    body = jobBar() + `<div class="hint">熔炼：1 份天然资源或碎矿 → 1 份精炼资源，每个 4 秒。碎矿由破碎机产出（2 矿→3 碎矿，净賺 50%）。</div><div class="rows">${Object.entries(A.SMELT).map(([from, to]) =>
+    body = jobBar() + `<div class="hint">熔炼：1 份天然资源 / 碎矿 / 纯净矿 → 1 份精炼资源，每个 4 秒。碎矿来自破碎机（2 矿→3 碎矿），纯净矿来自洗矿机（3 碎矿→4 纯净矿）。</div><div class="rows">${Object.entries(A.SMELT).map(([from, to]) =>
       `<button class="row" data-mact="smelt:${from}">
         <span class="sw" style="background:${A.itemColor(from)}"></span><span class="nm">${A.item(from).name}</span>
         <span class="arrow">→</span><span class="sw" style="background:${A.itemColor(to)}"></span><span class="nm">${A.item(to).name}</span>
@@ -315,6 +317,15 @@ function renderModule(mod) {
         return `<button class="row ${ok ? '' : 'dim'}" data-mact="crush:${from}">
           <span class="sw" style="background:${A.itemColor(from)}"></span><span class="nm">${A.item(from).name}</span>
           <span class="arrow">→</span><span class="sw" style="background:${A.itemColor(c.cr)}"></span><span class="nm">${A.item(c.cr).name}×3</span>
+          <span class="ct">×${A.player.count(from)}</span></button>`;
+      }).join('')}</div>`;
+  } else if (mod.type === 'washer') {
+    body = jobBar() + `<div class="hint">洗涤：3 份碎矿 + ${A.WASH_COMPOUND} 份化合物 → 4 份纯净矿（熔炉 1:1 出金属），每次 ${Math.round(A.WASH_BY_CHANCE * 100)}% 概率副产稀有粉。</div>
+      <div class="rows">${Object.entries(A.WASH).map(([from, w]) => {
+        const ok = A.player.count(from) >= 3 && A.player.count('compound') >= A.WASH_COMPOUND;
+        return `<button class="row ${ok ? '' : 'dim'}" data-mact="wash:${from}">
+          <span class="sw" style="background:${A.itemColor(from)}"></span><span class="nm">${A.item(from).name}</span>
+          <span class="arrow">→</span><span class="sw" style="background:${A.itemColor(w.pu)}"></span><span class="nm">${A.item(w.pu).name}×4</span>
           <span class="ct">×${A.player.count(from)}</span></button>`;
       }).join('')}</div>`;
   } else if (mod.type === 'chemistry') {
@@ -404,6 +415,22 @@ function moduleClick(e) {
         }
       }
     })) A.player.takeItem(val, 2);
+    return;
+  }
+  if (act === 'wash') {
+    const w = A.WASH[val];
+    if (!w) return;
+    if (A.player.count(val) < 3) { A.sfx.err(); toast('需要 3 份' + A.item(val).name); return; }
+    if (A.player.count('compound') < A.WASH_COMPOUND) { A.sfx.err(); toast('需要 ' + A.WASH_COMPOUND + ' 份化合物作洗涤剂'); return; }
+    if (A.build.startJob(mod, {
+      total: 6, label: '洗涤 ' + A.item(val).name, out: w.pu, qty: 4, by: w.by,
+      onDone: (j) => {
+        if (j.by && Math.random() < A.WASH_BY_CHANCE) {
+          A.player.addItem(j.by, 1);
+          toast('副产 ' + A.item(j.by).name);
+        }
+      }
+    })) { A.player.takeItem(val, 3); A.player.takeItem('compound', A.WASH_COMPOUND); }
     return;
   }
   if (act === 'chem') {
