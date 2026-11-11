@@ -9,8 +9,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <title>ASTRA·4D — 四维远征</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%23e8853c%27/%3E%3Ccircle cx=%2716%27 cy=%2714%27 r=%277%27 fill=%27%23f6dfb0%27/%3E%3Cpath d=%27M8 24c3-4 13-4 16 0z%27 fill=%27%237fb291%27/%3E%3C/svg%3E">
-<link rel="stylesheet" href="fonts/fonts.css?v=0.8.0">
-<link rel="stylesheet" href="style.css?v=0.8.0">
+<link rel="stylesheet" href="fonts/fonts.css?v=0.9.0">
+<link rel="stylesheet" href="style.css?v=0.9.0">
 </head>
 <body>
 <canvas id="scene"></canvas>
@@ -48,6 +48,8 @@
     <button class="nav-btn" data-panel="backpack">背包<span class="kb">B</span></button>
     <button class="nav-btn" data-panel="build">建造<span class="kb">C</span></button>
     <button class="nav-btn" data-panel="research">研究<span class="kb">V</span></button>
+    <button class="nav-btn" data-panel="codex">图鉴<span class="kb">J</span></button>
+    <button class="nav-btn" data-panel="net">联机<span class="kb">M</span></button>
     <button class="nav-btn round" data-panel="help">?</button>
   </div>
 
@@ -160,6 +162,50 @@
     <footer><span class="tip">每次降落都会保留该行星的基地、系绳与你挖过的地形</span></footer>
   </section>
 
+  <section class="panel" id="panel-codex">
+    <header>
+      <div><h2>图鉴</h2><p>生产链查询 · 每样资源从哪来、到哪去</p></div>
+      <button class="close" data-close>×</button>
+    </header>
+    <div class="panel-body">
+      <input id="codex-q" class="net-input codex-q" placeholder="搜索物品名，例如 铁矿 / 电路板 / 星辉" autocomplete="off">
+      <div id="codex-list" class="codex-list"></div>
+    </div>
+    <footer><span class="tip">来源与用途由配方表自动生成 · 深层相位矿只在 |w|&gt;4.5 出现</span></footer>
+  </section>
+
+  <section class="panel" id="panel-net">
+    <header>
+      <div><h2>联机</h2><p>合作远征 · HTTP 轮询房间（无 WebSocket）</p></div>
+      <button class="close" data-close>×</button>
+    </header>
+    <div class="panel-body cols">
+      <section class="col">
+        <h3>房间</h3>
+        <div id="net-status" class="net-status">未连接</div>
+        <label class="net-field">服务地址<input id="net-url" class="net-input" placeholder="http://localhost:8787"></label>
+        <label class="net-field">昵称<input id="net-name" class="net-input" maxlength="16" placeholder="宇航员" autocomplete="off"></label>
+        <label class="net-field">房号<input id="net-code" class="net-input" maxlength="4" placeholder="ABCD（加入时填）" autocomplete="off"></label>
+        <div class="net-btns">
+          <button id="net-create" class="btn-primary">创建房间</button>
+          <button id="net-join" class="btn-ghost">加入房间</button>
+          <button id="net-leave" class="btn-ghost">离开</button>
+        </div>
+        <div class="net-hint">本地联机：<code>node coop-server.mjs</code>，然后所有人访问同一个地址。世界与基地各自本地保存，联机只共享位置、行星、视图与聊天。</div>
+        <h3>队友</h3>
+        <div id="net-peers" class="net-peers"></div>
+      </section>
+      <section class="col">
+        <h3>无线电</h3>
+        <div id="net-log" class="net-log"></div>
+        <div class="net-say">
+          <input id="net-input" class="net-input" maxlength="80" placeholder="说点什么，回车发送" autocomplete="off">
+          <button id="net-send" class="btn-primary">发送</button>
+        </div>
+      </section>
+    </div>
+  </section>
+
   <section class="panel" id="panel-help">
     <header>
       <div><h2>操作与机制</h2><p>ASTRA·4D 速查</p></div>
@@ -174,6 +220,10 @@
         <div><h3>空间视图</h3><p><b>G</b> 或右上角「转换空间视图」在 <b>XYZ / XYW / YZW / XZW</b> 之间切换：同一片四维场换一个三维切片去看，相位轴自动变成被切掉的那一根（XYZ→W，XYW→Z，YZW→X，XZW→Y）。</p></div>
         <div><h3>载具</h3><p>打印漫游车跑远路，打印穿梭机换行星。载具停在基地的电网里会自动充电。</p></div>
         <div><h3>生存</h3><p>离开氧气网络会持续掉氧，归零后开始掉血。死亡回到最近的系绳桩。风暴里躲进庇护所能挡沙。</p></div>
+        <div><h3>深层相位</h3><p>相位滑到 <b>|w| &gt; 4.5</b> 是深层相位带：星辉矿/榍石/锂只在这里出现，但会受<b>相位辐射</b>（氧气 ×2、每秒掉血）。造一件<b>相位防护服</b>（进阶电路板 + 硬质合金 + 石墨烯）就能免疫。</p></div>
+        <div><h3>电压与处理链</h3><p>机器分 <b>LV / MV / HV</b>，电网电压看最高档电源；LV 电网带不动 MV 机器（降到 25% 速度）。破碎机（2 矿→3 碎矿）→ 洗矿机（3 碎矿→4 纯净矿）→ 熔炉，全链每矿出 2 份金属；工业级机器产出更高。</p></div>
+        <div><h3>图鉴</h3><p><b>J</b> 打开图鉴：每样资源的来源与用途都由配方表自动生成，搜索框直接查「电路板」「星辉」之类。</p></div>
+        <div><h3>联机</h3><p><b>M</b> 打开联机面板。本地跑 <b>node coop-server.mjs</b>（默认 8787）后所有人访问同一地址，房主建房拿 4 位房号，队友填写加入。联机共享位置、行星、视图与聊天，世界与基地各自本地保存。</p></div>
       </div>
     </div>
   </section>
@@ -192,7 +242,7 @@
       <button id="continue-btn" class="start-btn ghost hidden">继续存档</button>
     </div>
     <div class="title-controls">
-      <span>WASD 移动</span><i></i><span>左键 地形工具</span><i></i><span>Q/E 相位</span><i></i><span>G 视图</span><i></i><span>F 交互</span><i></i><span>T 系绳</span><i></i><span>B/C/V 面板</span>
+      <span>WASD 移动</span><i></i><span>左键 地形工具</span><i></i><span>Q/E 相位</span><i></i><span>G 视图</span><i></i><span>F 交互</span><i></i><span>J 图鉴</span><i></i><span>M 联机</span>
     </div>
   </div>
   <div class="title-foot">零构建 · 低多边形 · 粉彩星野 · 致敬 ASTRONEER</div>
@@ -208,14 +258,15 @@
 
 <div id="fx-fade" class="fx-fade"></div>
 
-<script src="vendor/three.min.js?v=0.8.0"></script>
-<script src="js/lib.js?v=0.8.0"></script>
-<script src="js/data.js?v=0.8.0"></script>
-<script src="js/world.js?v=0.8.0"></script>
-<script src="js/ruins.js?v=0.8.0"></script>
-<script src="js/build.js?v=0.8.0"></script>
-<script src="js/player.js?v=0.8.0"></script>
-<script src="js/ui.js?v=0.8.0"></script>
-<script src="js/main.js?v=0.8.0"></script>
+<script src="vendor/three.min.js?v=0.9.0"></script>
+<script src="js/lib.js?v=0.9.0"></script>
+<script src="js/data.js?v=0.9.0"></script>
+<script src="js/world.js?v=0.9.0"></script>
+<script src="js/ruins.js?v=0.9.0"></script>
+<script src="js/build.js?v=0.9.0"></script>
+<script src="js/player.js?v=0.9.0"></script>
+<script src="js/ui.js?v=0.9.0"></script>
+<script src="js/net.js?v=0.9.0"></script>
+<script src="js/main.js?v=0.9.0"></script>
 </body>
 </html>

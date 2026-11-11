@@ -201,6 +201,8 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyB') A.ui.togglePanel('backpack');
   if (e.code === 'KeyC') A.ui.togglePanel('build');
   if (e.code === 'KeyV') A.ui.togglePanel('research');
+  if (e.code === 'KeyJ') A.ui.togglePanel('codex');
+  if (e.code === 'KeyM') A.ui.togglePanel('net');
   if (e.code === 'KeyH') A.ui.togglePanel('help');
   if (e.code === 'KeyG' && gameStarted) A.cycleView();
   if (e.code === 'KeyR') { A.ui.setToolMode(A.player.toolMode === 'dig' ? 'fill' : 'dig'); A.sfx.blip(); }
@@ -593,6 +595,7 @@ function animate() {
     A.build.update(dt, A.player.w, A.player.x, A.player.z, A.env.wind);
     A.world.updateNodes(A.player.w, elapsed, dt, A.player.x, A.player.z);
     A.world.updateSamples(A.player.w, elapsed, dt, A.player.x, A.player.z);
+    A.net.tick(dt);
     A.ui.update(dt);
 
     saveTick += dt;
@@ -619,6 +622,7 @@ A.world.init(scene);
 A.ruins.init(scene);
 A.build.init(scene);
 A.player.init(scene);
+A.net.init(scene);
 A.ui.init();
 A.world.setPlanet(0, 1337, []);
 A.build.load([]);
@@ -637,7 +641,7 @@ const hasSave = !!localStorage.getItem(SAVE_KEY);
 $('continue-btn').classList.toggle('hidden', !hasSave);
 
 window.__astra = {
-  A, player: A.player, world: A.world, build: A.build, input,
+  A, player: A.player, world: A.world, build: A.build, input, net: A.net,
   start: () => { startNew(); }, continue: () => continueGame(),
   travel: (i) => A.travel(i), place: (id) => A.place.start(id),
   get started() { return gameStarted; }

@@ -17,7 +17,9 @@ function init() {
     'phase-fill', 'interact', 'panels', 'backpack-grid', 'printer-list',
     'build-list', 'research-items', 'research-blueprints', 'bytes-big',
     'module-title', 'module-body', 'module-sub', 'travel-list', 'death', 'death-cause',
-    'title', 'fx-fade', 'rad-chip'
+    'title', 'fx-fade', 'rad-chip',
+    'codex-q', 'codex-list', 'net-status', 'net-url', 'net-name', 'net-code',
+    'net-create', 'net-join', 'net-leave', 'net-peers', 'net-log', 'net-input', 'net-send'
   ].forEach((id) => { el[id] = $(id); });
 
   // 面板开关
@@ -45,6 +47,27 @@ function init() {
   el['research-blueprints'].addEventListener('click', unlockClick);
   el['module-body'].addEventListener('click', moduleClick);
   el['travel-list'].addEventListener('click', travelClick);
+  // 图鉴搜索
+  if (el['codex-q']) el['codex-q'].addEventListener('input', () => renderCodex());
+  // 联机面板
+  if (el['net-create']) {
+    el['net-create'].addEventListener('click', async () => {
+      const r = await A.net.create(el['net-name'].value, el['net-url'].value || A.net.defaultUrl());
+      if (!r.ok) toast(A.net.err || r.msg || '创建失败');
+      renderNet();
+    });
+    el['net-join'].addEventListener('click', async () => {
+      const r = await A.net.join(el['net-code'].value, el['net-name'].value, el['net-url'].value || A.net.defaultUrl());
+      if (!r.ok) toast(A.net.err || r.msg || '加入失败');
+      renderNet();
+    });
+    el['net-leave'].addEventListener('click', async () => { await A.net.leave(); renderNet(); });
+    const say = () => { if (A.net.say(el['net-input'].value)) el['net-input'].value = ''; renderNet(); };
+    el['net-send'].addEventListener('click', say);
+    el['net-input'].addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); say(); } });
+    el['net-url'].placeholder = A.net.defaultUrl();
+    el['net-name'].value = '宇航员' + (1 + Math.floor(Math.random() * 89));
+  }
   setToolMode('dig');
 }
 
@@ -150,6 +173,8 @@ function openPanel(name, data) {
   if (name === 'research') { renderResearch(); renderBlueprints(); }
   if (name === 'module') renderModule(data);
   if (name === 'travel') renderTravel();
+  if (name === 'codex') renderCodex();
+  if (name === 'net') renderNet();
   A.sfx.blip();
 }
 function closePanels() {
@@ -479,6 +504,95 @@ function moduleClick(e) {
   }
 }
 
+// ---------------- 图鉴（生产链查询，0.9.0） ----------------
+let codexIndex = null;
+const CAT_NAME = { raw: '天然', refined: '精炼', dust: '处理链', composite: '复合', gas: '气体', special: '特殊' };
+function buildCodexIndex() {
+  const idx = {};
+  const ensure = (k) => (idx[k] || (idx[k] = { src: [], use: [] }));
+  const seen = new Set();
+  const add = (arr, s) => { if (!seen.has(arr.tag + s)) { seen.add(arr.tag + s); arr.push(s); } };
+  const S = (k) => { const e = ensure(k); e.src.tag = k; return e.src; };
+  const U = (k) => { const e = ensure(k); e.use.tag = k; return e.use; };
+  for (const c of A.CHEM) {
+    add(S(c.out), '化学实验室：' + A.item(c.a).name + ' + ' + A.item(c.b).name + (c.gas ? ' + ' + A.item(c.gas).name : ''));
+    for (const k of [c.a, c.b, c.gas]) if (k && k !== c.out) add(U(k), A.item(c.out).name);
+  }
+  for (const [from, to] of Object.entries(A.SMELT)) {
+    add(S(to), '熔炉：' + A.item(from).name + ' ×1');
+    add(U(from), A.item(to).name);
+  }
+  for (const [ore, c] of Object.entries(A.CRUSH)) {
+    add(S(c.cr), '破碎机：' + A.item(ore).name + ' ×2');
+    add(S(c.by), '破碎机副产（' + A.item(ore).name + '）');
+    add(U(ore), '碎矿 · ' + A.item(c.cr).name);
+  }
+  for (const [cr, w] of Object.entries(A.WASH)) {
+    add(S(w.pu), '洗矿机：' + A.item(cr).name + ' ×3 + 化合物');
+    add(S(w.by), '洗矿机副产（' + A.item(cr).name + '）');
+    add(U(cr), '纯净矿 · ' + A.item(w.pu).name);
+  }
+  for (const [id, r] of Object.entries(A.RECIPES)) {
+    if (r.kind === 'item') add(S(id), '打印：' + r.name);
+    for (const k of Object.keys(r.cost || {})) add(U(k), r.name);
+  }
+  for (const P of A.PLANETS) {
+    for (const k of Object.keys(P.res || {})) add(S(k), '矿脉 · ' + P.name);
+    for (const k of Object.keys(P.deep || {})) add(S(k), '深层相位（|w|>4.5） · ' + P.name);
+    for (const g of A.ATMO[P.id] || []) add(S(g), '大气冷凝 · ' + P.name);
+  }
+  add(S('soil'), '地形工具挖掘');
+  add(S('scrap'), '遗址搜刮');
+  return idx;
+}
+function renderCodex() {
+  if (!el['codex-list']) return;
+  if (!codexIndex) codexIndex = buildCodexIndex();
+  const q = (el['codex-q'] && el['codex-q'].value || '').trim().toLowerCase();
+  const order = { raw: 0, refined: 1, dust: 2, composite: 3, gas: 4, special: 5 };
+  const ids = Object.keys(A.ITEMS)
+    .filter((k) => !q || A.item(k).name.toLowerCase().includes(q) || k.includes(q) || (A.item(k).en || '').toLowerCase().includes(q))
+    .sort((a, b) => ((order[A.item(a).cat] ?? 9) - (order[A.item(b).cat] ?? 9)) || A.item(a).name.localeCompare(A.item(b).name));
+  if (!ids.length) { el['codex-list'].innerHTML = '<div class="empty">没有匹配的物品</div>'; return; }
+  el['codex-list'].innerHTML = ids.map((k) => {
+    const it = A.item(k);
+    const idx = codexIndex[k] || { src: [], use: [] };
+    const src = [...new Set(idx.src)].slice(0, 3).join(' · ') || '无天然来源（中间产物）';
+    const use = [...new Set(idx.use)].slice(0, 4).join('、') || '—';
+    return `<div class="codex-item">
+      <div class="codex-head">
+        <span class="sw" style="background:${A.itemColor(k)}"></span>
+        <b>${it.name}</b><i>${CAT_NAME[it.cat] || it.cat}</i>
+        ${it.bytes ? '<em>' + it.bytes + ' 字节</em>' : ''}
+      </div>
+      <div class="codex-line"><span>来源</span>${src}</div>
+      <div class="codex-line"><span>用途</span>${use}</div>
+    </div>`;
+  }).join('');
+}
+
+// ---------------- 联机面板（0.9.0） ----------------
+function renderNet() {
+  const n = A.net;
+  if (!n || !el['net-status']) return;
+  if (!el['net-url'].value) el['net-url'].placeholder = n.defaultUrl();
+  el['net-status'].textContent = n.online
+    ? '房间 ' + n.code + (n.isHost ? ' · 房主' : ' · 成员') + ' · ' + (n.peers.size + 1) + ' 人 · ' + (n.fails ? '重连中…' : '同步中')
+    : '未连接';
+  el['net-status'].classList.toggle('on', n.online);
+  const rows = n.peerRows();
+  el['net-peers'].innerHTML = n.online
+    ? ('<div class="net-peer me"><b>' + n.name + '</b><span>你 · ' + (n.isHost ? '房主' : '成员') + '</span></div>' +
+       (rows.length ? rows.map((r) => `<div class="net-peer"><b>${r.name}</b><span>${r.host ? '房主 · ' : ''}${r.where}</span></div>`).join('') : '<div class="empty">还没有队友加入</div>'))
+    : '<div class="empty">创建房间后把 4 位房号发给队友</div>';
+  el['net-log'].innerHTML = n.log.length
+    ? n.log.map((l) => l.sys
+      ? `<div class="net-line sys">${l.t}</div>`
+      : `<div class="net-line"><b>${l.by}</b><span>${l.t}</span></div>`).join('')
+    : '<div class="empty">无线电静默。说说你的计划？</div>';
+  el['net-log'].scrollTop = el['net-log'].scrollHeight;
+}
+
 // 星图
 function renderTravel() {
   el['travel-list'].innerHTML = A.PLANETS.map((P, i) => {
@@ -543,6 +657,7 @@ A.ui = {
   },
   openPanel, closePanels, togglePanel, renderBackpack, renderPrinter, renderBuild,
   renderResearch, renderBlueprints, renderModule, refreshModule, renderTravel,
+  renderCodex, renderNet,
   setPlanetChip, setToolMode, showDeath, hideDeath, setInteract, update, setViewLabel,
   el, hoverBuild: false,
   get openName() { return openName; }

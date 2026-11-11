@@ -44,20 +44,22 @@
 
 ## 技术说明
 
-- **纯原生 HTML / CSS / JavaScript，零构建、零依赖、零运行时网络请求**。经典 `<script>` 加载（非 ES module），因此可以直接双击 `index.html`，也可以丢到任意静态服务器 / GitHub Pages。
+- **纯原生 HTML / CSS / JavaScript，零构建、零依赖、单机零运行时网络请求**。经典 `<script>` 加载（非 ES module），因此可以直接双击 `index.html`，也可以丢到任意静态服务器 / GitHub Pages。联机是可选模块：`js/net.js` 只在点「创建/加入房间」后才发请求，`coop-server.mjs` 是独立的零依赖 Node 脚本。
 - 目录即模块，全部挂在 `window.A` 上：
 
 ```text
 index.html            # 标题幕 / HUD / 面板骨架（静态引用版本串在这里）
 style.css             # 视觉系统 + 移动端布局
-js/lib.js             # 数学（四维噪声）、行星表、调色板、WebAudio 小音效
-js/data.js            # 21 种物品、熔炼/合成/大气表、25 条蓝图配方
-js/world.js           # 地形网格、编辑层、装饰、矿脉、研究样本、风暴
+js/lib.js             # 数学（四维噪声）、行星表（含深层矿带）、调色板、WebAudio 小音效
+js/data.js            # 72 种物品、熔炼/破碎/洗矿/合成/大气表、33 条蓝图配方、电压与辐射常量
+js/world.js           # 地形网格、编辑层、装饰、矿脉（含深层相位带）、研究样本、风暴
 js/ruins.js           # 遗址：废弃前哨 / 探测者残骸 / 星门碎片与搜刮
-js/build.js           # 模块外形与运行时、电网求解、供氧传播、作业队列
-js/player.js          # 宇航员、相机、地形工具、采集、系绳桩、载具驾驶
-js/ui.js              # HUD 刷新、背包/建造/研究/模块/星图面板
+js/build.js           # 模块外形与运行时、电网求解（电压档/熔断）、供氧传播、作业队列
+js/player.js          # 宇航员、相机、地形工具、采集、系绳桩、辐射、载具驾驶
+js/ui.js              # HUD 刷新、背包/建造/研究/模块/星图/图鉴/联机面板
+js/net.js             # 联机客户端：150ms HTTP 轮询、远端宇航员与名牌、聊天
 js/main.js            # 渲染器、天空、光照、输入、放置、存档、主循环
+coop-server.mjs       # 零依赖联机房间服务（同端口托管静态站 + /api/*，开发与局域网用）
 bump-version.mjs      # 版本串同步 / 缓存击穿（Node，零依赖，不参与运行）
 tools/smoke.mjs       # 无头 Chromium + CDP 冒烟测试（开发用，不参与运行）
 fonts/                # 本地 Outfit / Space Mono
