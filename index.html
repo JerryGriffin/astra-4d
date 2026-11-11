@@ -2,99 +2,214 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#5f9fd8">
+<meta name="description" content="ASTRA·4D — 在 x y z 之外还有 w 的四维异星开拓游戏，致敬 ASTRONEER。">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <title>ASTRA·4D — 四维远征</title>
-<link rel="stylesheet" href="fonts/fonts.css?v=0.2.0">
-<link rel="stylesheet" href="style.css?v=0.2.0">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%23e8853c%27/%3E%3Ccircle cx=%2716%27 cy=%2714%27 r=%277%27 fill=%27%23f6dfb0%27/%3E%3Cpath d=%27M8 24c3-4 13-4 16 0z%27 fill=%27%237fb291%27/%3E%3C/svg%3E">
+<link rel="stylesheet" href="fonts/fonts.css?v=0.3.0">
+<link rel="stylesheet" href="style.css?v=0.3.0">
 </head>
 <body>
 <canvas id="scene"></canvas>
 
 <!-- ============ HUD ============ -->
 <div id="hud" class="hidden">
-  <!-- 生命体征：左上，细长条 -->
-  <div class="vitals">
-    <div class="vital">
-      <svg class="vic-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c2.5 3.2 6.2 6.4 6.2 10.2A6.2 6.2 0 0 1 12 19.4a6.2 6.2 0 0 1-6.2-6.2C5.8 9.4 9.5 6.2 12 3z"/></svg>
-      <div class="bar"><div id="oxygen-fill" class="fill oxygen"></div></div>
-      <span id="oxygen-num" class="num">100</span>
+
+  <div class="hud-tl">
+    <div id="planet-chip" class="planet-chip"><b>希尔瓦</b><span>SYLVA</span><i>类地行星</i></div>
+    <div class="vitals">
+      <div class="vital">
+        <svg viewBox="0 0 24 24" class="vic"><path d="M12 3c2.5 3.2 6.2 6.4 6.2 10.2A6.2 6.2 0 0 1 12 19.4a6.2 6.2 0 0 1-6.2-6.2C5.8 9.4 9.5 6.2 12 3z"/></svg>
+        <div class="bar"><div id="o2-fill" class="fill o2"></div></div>
+        <span id="o2-num" class="num">100</span>
+      </div>
+      <div class="vital">
+        <svg viewBox="0 0 24 24" class="vic"><path d="M12 20.7S3.5 15.3 3.5 9.6A4.6 4.6 0 0 1 12 7a4.6 4.6 0 0 1 8.5 2.6c0 5.7-8.5 11.1-8.5 11.1z"/></svg>
+        <div class="bar"><div id="hp-fill" class="fill hp"></div></div>
+        <span id="hp-num" class="num">100</span>
+      </div>
+      <div class="vital">
+        <svg viewBox="0 0 24 24" class="vic"><path d="M4 18h16v2H4zM6 15c0-3 2-3 2-6h8c0 3 2 3 2 6z"/></svg>
+        <div class="bar thin"><div id="soil-fill" class="fill soil"></div></div>
+        <span id="soil-num" class="num">8</span>
+      </div>
+      <div class="bytes-line">字节 <b id="bytes-num">0</b></div>
     </div>
-    <div class="vital">
-      <svg class="vic-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.7S3.5 15.3 3.5 9.6A4.6 4.6 0 0 1 12 7a4.6 4.6 0 0 1 8.5 2.6c0 5.7-8.5 11.1-8.5 11.1z"/></svg>
-      <div class="bar"><div id="health-fill" class="fill health"></div></div>
-      <span id="health-num" class="num">100</span>
-    </div>
-    <div id="oxy-state" class="oxy-state">氧气充足</div>
   </div>
 
-  <!-- 操作提示：右上，可折叠 -->
-  <button id="hint-toggle" class="hint-toggle" aria-label="操作说明">操作 <span class="kbd">H</span></button>
-  <div id="hint-panel" class="hint-panel">
-    <div class="hint-row"><span class="keys"><b>W A S D</b> 移动</span><span class="keys"><b>Shift</b> 疾跑</span></div>
-    <div class="hint-row"><span class="keys"><b>空格</b> 跳跃</span><span class="keys"><b>拖拽鼠标</b> 视角</span></div>
-    <div class="hint-row hi"><span class="keys"><b>Q / E</b> 相位滑移 w⁻ / w⁺</span></div>
-    <div class="hint-row"><span class="keys"><b>按住左键</b> 采集资源</span><span class="keys"><b>F</b> 放置系绳桩</span></div>
+  <div class="hud-tr">
+    <button class="nav-btn" data-panel="backpack">背包<span class="kb">B</span></button>
+    <button class="nav-btn" data-panel="build">建造<span class="kb">C</span></button>
+    <button class="nav-btn" data-panel="research">研究<span class="kb">V</span></button>
+    <button class="nav-btn round" data-panel="help">?</button>
   </div>
 
-  <!-- 相位标尺：左下，w 连续轴 -->
-  <div class="phase-wrap">
-    <div class="phase-head">
-      <span class="phase-label">相位轴 W</span>
-      <span id="w-readout" class="w-readout">+0.000</span>
-    </div>
-    <div id="phase-track" class="phase-track">
-      <div class="phase-ticks"></div>
-      <div id="phase-dots" class="phase-dots"></div>
-      <div id="phase-cursor" class="phase-cursor"></div>
-    </div>
-    <div class="phase-foot"><span>q 减相</span><span class="phase-foot-mid">连续滑移 · 世界随之呼吸</span><span>e 增相</span></div>
-  </div>
-
-  <!-- 背包：右下 -->
-  <div class="inv-wrap">
-    <div class="inv-title">样本舱</div>
-    <div id="inv-chips" class="inv-chips"></div>
-  </div>
-
-  <!-- 上下文提示 -->
-  <div id="prompt" class="prompt"></div>
-
-  <!-- 准星 -->
   <div id="crosshair" class="crosshair"><i></i></div>
+  <div id="prompt" class="prompt"></div>
+  <div id="toast" class="toast"></div>
+  <div id="interact" class="interact"></div>
 
-  <!-- 相位警告 -->
-  <div id="phase-toast" class="phase-toast">相位未对齐 · 按 Q / E 滑移至资源的 W 相位</div>
+  <div class="hud-bl">
+    <div class="tool-modes">
+      <button data-mode="dig" class="on"><i></i>挖掘</button>
+      <button data-mode="fill"><i></i>填土</button>
+      <span class="kb-sep">R</span>
+    </div>
+    <div class="phase">
+      <div class="phase-h"><span>相位轴 W</span><b id="w-readout">+0.00</b></div>
+      <div class="phase-track">
+        <div class="phase-ticks"></div>
+        <div id="phase-fill" class="phase-cursor"></div>
+      </div>
+      <div class="phase-f"><span>Q 减相</span><span>连续滑移 · 世界随之呼吸</span><span>E 增相</span></div>
+    </div>
+  </div>
+
+  <div class="hud-br">
+    <div class="quick">
+      <span><b>T</b> 系绳</span><span><b>F</b> 交互</span><span><b>WASD</b> 移动</span><span><b>空格</b> 跳</span>
+    </div>
+  </div>
+
+  <!-- 移动端 -->
+  <div id="mobile" class="mobile">
+    <div id="joy" class="joy"><div id="joy-knob" class="joy-knob"></div><span class="joy-h">移动</span></div>
+    <div class="m-actions">
+      <button id="btn-jump" class="mbtn small">跳</button>
+      <button id="btn-mode" class="mbtn small">挖/填</button>
+      <button id="btn-tether" class="mbtn small">系绳</button>
+      <button id="btn-interact" class="mbtn small">交互</button>
+      <button id="btn-action" class="mbtn big">行动</button>
+    </div>
+    <div class="m-phase">
+      <button id="btn-wup" class="mbtn wide">W +</button>
+      <button id="btn-wdown" class="mbtn wide">W −</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 面板 ============ -->
+<div id="panels" class="panels">
+  <section class="panel" id="panel-backpack">
+    <header>
+      <div><h2>背包</h2><p>EXO DYNAMICS · 随身补给</p></div>
+      <button class="close" data-close>×</button>
+    </header>
+    <div class="panel-body cols">
+      <section class="col">
+        <h3>样本与材料</h3>
+        <div id="backpack-grid" class="inv-grid"></div>
+      </section>
+      <section class="col">
+        <h3>背包打印机 <em>随身 · 不耗电</em></h3>
+        <div id="printer-list" class="cards"></div>
+      </section>
+    </div>
+    <footer><span>字节 <b class="bytes-big">0</b></span><span>土壤 <b class="stat-soil">0/12</b></span><span class="tip">氧气由系绳桩与制氧机补给</span></footer>
+  </section>
+
+  <section class="panel" id="panel-build">
+    <header>
+      <div><h2>建造</h2><p>打印模块 · 选一个再点地面放置</p></div>
+      <button class="close" data-close>×</button>
+    </header>
+    <div class="panel-body"><div id="build-list"></div></div>
+    <footer><span class="tip">模块之间 13 米内自动接线成电网 · 制氧机给全网供氧</span></footer>
+  </section>
+
+  <section class="panel" id="panel-research">
+    <header>
+      <div><h2>研究</h2><p>样本 → 字节 → 蓝图</p></div>
+      <button class="close" data-close>×</button>
+    </header>
+    <div class="panel-body cols">
+      <section class="col">
+        <h3>研究舱样本 <em>需站在研究舱旁</em></h3>
+        <div id="research-items" class="rows"></div>
+      </section>
+      <section class="col">
+        <h3>蓝图目录</h3>
+        <div id="research-blueprints" class="bps"></div>
+      </section>
+    </div>
+    <footer><span>可用字节 <b class="bytes-big">0</b></span></footer>
+  </section>
+
+  <section class="panel" id="panel-module">
+    <header>
+      <div><h2 id="module-title">模块</h2><p id="module-sub"></p></div>
+      <button class="close" data-close>×</button>
+    </header>
+    <div class="panel-body" id="module-body"></div>
+  </section>
+
+  <section class="panel" id="panel-travel">
+    <header>
+      <div><h2>星图</h2><p>穿梭机航线 · 七颗行星</p></div>
+      <button class="close" data-close>×</button>
+    </header>
+    <div class="panel-body"><div id="travel-list" class="planets"></div></div>
+    <footer><span class="tip">每次降落都会保留该行星的基地、系绳与你挖过的地形</span></footer>
+  </section>
+
+  <section class="panel" id="panel-help">
+    <header>
+      <div><h2>操作与机制</h2><p>ASTRA·4D 速查</p></div>
+      <button class="close" data-close>×</button>
+    </header>
+    <div class="panel-body help">
+      <div class="help-grid">
+        <div><h3>移动</h3><p><b>WASD</b> 移动 · <b>Shift</b> 疾跑 · <b>空格</b> 跳跃 · 拖拽转视角 · 滚轮/双指缩放</p></div>
+        <div><h3>四维</h3><p><b>Q / E</b> 沿相位轴 w 连续滑移（±6.5）。地形、矿脉、系绳都是 w 的连续函数。矿只在相位对齐时能采。</p></div>
+        <div><h3>地形工具</h3><p>按住 <b>左键</b> 挖/填，<b>R</b> 切换模式。挖出的土进土壤罐；<b>T</b> 放系绳桩延伸氧气网络。</p></div>
+        <div><h3>基地</h3><p><b>F</b> 与模块交互。太阳能/风力/电池/发电机构成电网；研究舱把样本变成字节；熔炉→精炼，化学实验室→复合材料。</p></div>
+        <div><h3>载具</h3><p>打印漫游车跑远路，打印穿梭机换行星。载具停在基地的电网里会自动充电。</p></div>
+        <div><h3>生存</h3><p>离开氧气网络会持续掉氧，归零后开始掉血。死亡回到最近的系绳桩。风暴里躲进庇护所能挡沙。</p></div>
+      </div>
+    </div>
+  </section>
 </div>
 
 <!-- ============ 标题幕 ============ -->
 <div id="title">
   <div class="title-grain"></div>
   <div class="title-inner">
-    <div class="title-kicker">四维远征 · A CONTINUOUS 4TH DIMENSION</div>
-    <h1 class="title-name">ASTRA<span class="title-dot">·</span>4D</h1>
+    <div class="title-kicker">EXO DYNAMICS · A CONTINUOUS 4TH DIMENSION</div>
+    <h1 class="title-name">ASTRA<span>·</span>4D</h1>
     <p class="title-sub">在 x y z 之外，还有 <em>w</em>。<br>
-      地形、矿脉与系绳都是 w 的<b>连续函数</b>——按住 <b>Q / E</b> 滑移相位，<br>
-      整个世界会像呼吸一样平滑变形。</p>
+      挖开粉彩的异星地表，把矿脉、平台与系绳搭成网络；<br>
+      按住 <b>Q / E</b> 滑移相位，整颗行星会像呼吸一样变形。</p>
     <div class="title-actions">
-      <button id="start-btn" class="start-btn">进入相界</button>
-      <div class="title-controls">
-        <span>WASD 移动</span><i></i><span>空格 跳跃</span><i></i><span>Q/E 相位</span><i></i><span>左键 采集</span><i></i><span>F 系绳</span>
-      </div>
+      <button id="start-btn" class="start-btn">新的远征</button>
+      <button id="continue-btn" class="start-btn ghost hidden">继续存档</button>
+    </div>
+    <div class="title-controls">
+      <span>WASD 移动</span><i></i><span>左键 地形工具</span><i></i><span>Q/E 相位</span><i></i><span>F 交互</span><i></i><span>T 系绳</span><i></i><span>B/C/V 面板</span>
     </div>
   </div>
-  <div class="title-foot">低多边形 · 粉彩星野 · 致敬 ASTRONEER 的几何美学</div>
+  <div class="title-foot">零构建 · 低多边形 · 粉彩星野 · 致敬 ASTRONEER</div>
 </div>
 
-<!-- ============ 死亡幕 ============ -->
 <div id="death" class="death hidden">
   <div class="death-inner">
-    <div class="death-kicker">氧气耗尽</div>
+    <div class="death-kicker" id="death-cause">氧气耗尽</div>
     <div class="death-title">宇航员已回收</div>
-    <div class="death-sub">相位信标将你带回最近的系绳桩</div>
+    <div class="death-sub">相位信标正把你带回最近的系绳桩</div>
   </div>
 </div>
 
-<script src="vendor/three.min.js?v=0.2.0"></script>
-<script src="main.js?v=0.2.0"></script>
+<div id="fx-fade" class="fx-fade"></div>
+
+<script src="vendor/three.min.js?v=0.3.0"></script>
+<script src="js/lib.js?v=0.3.0"></script>
+<script src="js/data.js?v=0.3.0"></script>
+<script src="js/world.js?v=0.3.0"></script>
+<script src="js/build.js?v=0.3.0"></script>
+<script src="js/player.js?v=0.3.0"></script>
+<script src="js/ui.js?v=0.3.0"></script>
+<script src="js/main.js?v=0.3.0"></script>
 </body>
 </html>
