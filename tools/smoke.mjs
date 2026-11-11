@@ -147,6 +147,27 @@ await shot('07-panel-research.png');
 await evalJS(`A.ui.closePanels()`);
 
 // 洪水：制造与研究
+// 空间视图：切一圈，地形高度应随之改变
+report.viewBefore = await evalJS(`({ view: A.view.id, phase: A.view.phase, h: +A.world.height(A.player.x, A.player.z, A.player.w).toFixed(2) })`);
+report.viewSteps = [];
+for (const vid of ['xyw', 'yzw', 'xzw']) {
+  await evalJS(`__astra.A.setView('${vid}')`);
+  await sleep(900);
+  report.viewSteps.push(await evalJS(`({
+    view: A.view.id, phase: A.view.phase,
+    label: document.getElementById('phase-label').textContent,
+    wup: document.getElementById('btn-wup').textContent,
+    axis: document.querySelector('.view-axis').textContent,
+    h: +A.world.height(A.player.x, A.player.z, A.player.w).toFixed(2),
+    py: +A.player.y.toFixed(2),
+    buried: A.player.y < A.world.height(A.player.x, A.player.z, A.player.w) - 0.05
+  })`));
+  await shot('05c-view-' + vid + '.png');
+}
+await evalJS(`__astra.A.setView('xyz')`);
+await sleep(700);
+report.viewBack = await evalJS(`({ view: A.view.id, phase: A.view.phase })`);
+
 report.jobs = await evalJS(`(async () => {
   const A = window.A;
   const sm = A.build.add('smelter', 4.5, 3.5, 0);

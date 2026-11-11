@@ -199,6 +199,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyC') A.ui.togglePanel('build');
   if (e.code === 'KeyV') A.ui.togglePanel('research');
   if (e.code === 'KeyH') A.ui.togglePanel('help');
+  if (e.code === 'KeyG' && gameStarted) A.cycleView();
   if (e.code === 'KeyR') { A.ui.setToolMode(A.player.toolMode === 'dig' ? 'fill' : 'dig'); A.sfx.blip(); }
   if (e.code === 'KeyT' && gameStarted && !A.player.dead) A.player.placeTether();
   if (e.code === 'KeyF' && gameStarted) interact();
@@ -392,7 +393,7 @@ A.place = {
 
 // ---------------- 存档 ----------------
 const SAVE_KEY = 'astra4d.save.v2';
-let save = { v: 2, seed: 1, pi: 0, dayTime: 0.18, player: null, planets: {} };
+let save = { v: 2, seed: 1, pi: 0, dayTime: 0.18, view: 'xyz', player: null, planets: {} };
 A.save = save;
 
 function planetState(pid) {
@@ -414,6 +415,7 @@ function writeSave(silent) {
     capturePlanet();
     save.pi = A.world.state.pi;
     save.dayTime = dayTime;
+    save.view = A.view.id;
     localStorage.setItem(SAVE_KEY, JSON.stringify(save));
     if (!silent) A.ui.toast('已保存');
     return true;
@@ -463,6 +465,28 @@ A.travel = function (pi) {
   }, 420);
 };
 
+// ---------------- 空间视图 ----------------
+A.setView = function (id, silent) {
+  const v = A.parseView(id);
+  A.view = v;
+  A.world.rebuild();
+  A.player.y = A.world.height(A.player.x, A.player.z, A.player.w) + 1.1;
+  A.player.vy = 0;
+  A.player.grounded = false;
+  save.view = v.id;
+  A.ui.setViewLabel();
+  if (!silent) {
+    A.sfx.ok();
+    A.ui.toast('空间视图 ' + v.id.toUpperCase() + ' · 现在滑移 ' + v.phase.toUpperCase() + ' 轴');
+    A.burst(A.player.x, A.player.y + 1, A.player.z, new THREE.Color(0x8d78d6), 34, 3.4);
+  }
+  if (gameStarted) writeSave(true);
+};
+A.cycleView = function () {
+  const i = A.VIEW_IDS.indexOf(A.view.id);
+  A.setView(A.VIEW_IDS[(i + 1) % A.VIEW_IDS.length]);
+};
+
 // ---------------- 新游戏 / 继续 ----------------
 let gameStarted = false;
 function startNew() {
@@ -478,6 +502,7 @@ function startNew() {
   A.player.oxygen = 100;
   A.player.oxygenMax = 100;
   A.player.health = 100;
+  A.setView('xyz', true);
   begin();
 }
 function continueGame() {
@@ -495,6 +520,7 @@ function continueGame() {
     if (save.player) A.player.loadState(save.player);
     else bootPlanet(pi, st.edits || []);
     dayTime = save.dayTime || 0.18;
+    A.setView(save.view || 'xyz', true);
     A.world.update(A.player.w, A.player.x, A.player.z, false);
     begin();
   } catch (e) { startNew(); }
@@ -579,6 +605,7 @@ A.build.load([]);
 applyPlanetLook();
 A.player.x = 5.5; A.player.z = 5.5;
 A.player.y = A.world.height(5.5, 5.5, 0) + 0.6;
+A.setView(save.view || 'xyz', true);
 A.world.update(0, 5.5, 5.5, false);
 initTouch();
 resize();

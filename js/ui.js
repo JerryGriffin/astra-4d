@@ -13,6 +13,7 @@ function init() {
   [
     'hud', 'o2-fill', 'o2-num', 'hp-fill', 'hp-num', 'soil-fill', 'soil-num',
     'planet-chip', 'bytes-num', 'prompt', 'toast', 'crosshair', 'w-readout',
+    'phase-label', 'view-tag', 'view-btn', 'btn-view', 'btn-wup', 'btn-wdown',
     'phase-fill', 'interact', 'panels', 'backpack-grid', 'printer-list',
     'build-list', 'research-items', 'research-blueprints', 'bytes-big',
     'module-title', 'module-body', 'module-sub', 'travel-list', 'death', 'death-cause',
@@ -33,6 +34,10 @@ function init() {
   document.querySelectorAll('[data-mode]').forEach((b) => {
     b.addEventListener('click', () => setToolMode(b.dataset.mode));
   });
+  // 空间视图
+  const cycleView = () => { if (A.cycleView) A.cycleView(); };
+  if (el['view-btn']) el['view-btn'].addEventListener('click', cycleView);
+  if (el['btn-view']) el['btn-view'].addEventListener('click', cycleView);
   // 通用委托：建造 / 打印 / 研究 / 模块动作
   el['printer-list'].addEventListener('click', (e) => craftClick(e, 0));
   el['build-list'].addEventListener('click', (e) => craftClick(e, 1));
@@ -92,6 +97,19 @@ function setInteract(text) {
   lastInteract = text;
   el.interact.textContent = text || '';
   el.interact.classList.toggle('show', !!text);
+}
+
+// 空间视图标签：相位轴跟着变，按钮与 HUD 同步
+function setViewLabel() {
+  const v = A.view;
+  const id = v.id.toUpperCase(), ph = v.phase.toUpperCase();
+  if (el['phase-label']) el['phase-label'].textContent = '相位轴 ' + ph;
+  if (el['view-tag']) el['view-tag'].textContent = v.a.toUpperCase() + ' ' + v.b.toUpperCase() + ' ' + v.c.toUpperCase();
+  const axis = document.querySelector('.view-axis');
+  if (axis) axis.textContent = id;
+  if (el['btn-wup']) el['btn-wup'].textContent = ph + ' +';
+  if (el['btn-wdown']) el['btn-wdown'].textContent = ph + ' −';
+  if (el['view-btn']) el['view-btn'].title = '转换空间视图（G）· 当前 ' + id + '，相位轴 ' + ph;
 }
 
 function setPlanetChip() {
@@ -156,18 +174,21 @@ function renderBackpack() {
 // 打印配方
 function costHTML(cost) {
   return Object.entries(cost).map(([k, v]) => {
-    const ok = A.player.count(k) >= v;
-    return `<span class="cost ${ok ? '' : 'no'}"><i style="background:${A.itemColor(k)}"></i>${A.item(k).name} ${A.player.count(k)}/${v}</span>`;
+    const have = A.player.count(k);
+    const ok = have >= v;
+    return `<span class="cost ${ok ? '' : 'no'}" title="${A.item(k).name}：已有 ${have}，需要 ${v}">
+      <i style="background:${A.itemColor(k)}"></i>${A.item(k).name}<b>×${v}</b></span>`;
   }).join('');
 }
 function recipeHTML(id) {
   const r = A.RECIPES[id];
   const unlocked = r.bytes === 0 || A.player.unlocked.includes(id);
   const afford = A.player.canAfford(r.cost);
+  const mark = A.itemColor(Object.keys(r.cost)[0]);
   return `<button class="card ${unlocked ? '' : 'locked'} ${afford && unlocked ? '' : 'dim'}" data-craft="${id}">
-    <span class="card-h"><b>${r.name}</b><i>${r.kind === 'module' ? '模块' : '物品'}</i></span>
+    <span class="card-h"><i class="card-mark" style="--mk:${mark}"></i><b>${r.name}</b></span>
     <span class="card-d">${r.desc}</span>
-    <span class="card-c">${unlocked ? costHTML(r.cost) : '<span class="lock">需要 ' + r.bytes + ' 字节解锁</span>'}</span>
+    <span class="card-c">${unlocked ? costHTML(r.cost) : '<span class="lock">' + r.bytes + ' 字节解锁</span>'}</span>
   </button>`;
 }
 function renderPrinter() {
@@ -442,7 +463,7 @@ A.ui = {
   },
   openPanel, closePanels, togglePanel, renderBackpack, renderPrinter, renderBuild,
   renderResearch, renderBlueprints, renderModule, refreshModule, renderTravel,
-  setPlanetChip, setToolMode, showDeath, hideDeath, setInteract, update,
+  setPlanetChip, setToolMode, showDeath, hideDeath, setInteract, update, setViewLabel,
   el, hoverBuild: false,
   get openName() { return openName; }
 };

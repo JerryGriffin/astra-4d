@@ -26,22 +26,22 @@ const state = {
 function coarseH(i, j, w) {
   const P = state.planet, t = P.terr, o = state.o;
   const x = i * COARSE, z = j * COARSE;
-  let h = t.amp * A.fbm4(x * t.freq + o, 11.7, z * t.freq - o, w * 0.42, t.oct);
-  h += t.amp * 0.32 * A.fbm4(x * t.freq * 3.1, 4.2, z * t.freq * 3.1, w * 0.75, 2);
+  let h = t.amp * A.fbmS(x * t.freq + o, z * t.freq - o, w * 0.42, 11.7, t.oct);
+  h += t.amp * 0.32 * A.fbmS(x * t.freq * 3.1, z * t.freq * 3.1, w * 0.75, 4.2, 2);
   if (t.mesa > 0) {
     const step = Math.round(h * 1.5) / 1.5;
-    const m = M.smoothstep(A.noise4(x * 0.02, 77, z * 0.02, w * 0.3), -0.25, 0.55);
+    const m = M.smoothstep(A.noiseS(x * 0.02, z * 0.02, w * 0.3, 77), -0.25, 0.55);
     h = M.lerp(h, step, t.mesa * 0.5 * m);
   }
   if (t.crater > 0) {
-    const cf = A.noise4(x * 0.032 + o, 3.3, z * 0.032 - o, w * 0.18);
+    const cf = A.noiseS(x * 0.032 + o, z * 0.032 - o, w * 0.18, 3.3);
     h -= t.crater * t.amp * 0.9 * (1 - M.smoothstep(Math.abs(cf), 0.0, 0.38));
   }
   return h - t.amp * 0.32;
 }
 
 function detailH(x, z, w) {
-  return state.planet.terr.detail * A.noise4(x * 0.30, 27.0, z * 0.30, w * 1.15);
+  return state.planet.terr.detail * A.noiseS(x * 0.30, z * 0.30, w * 1.15, 27.0);
 }
 
 function baseHeight(x, z, w) {
@@ -152,8 +152,8 @@ const _cRock = new THREE.Color();
 function coarseColor(i, j, w, h, out) {
   const P = state.planet, pal = P.pal, t = P.terr;
   const x = i * COARSE, z = j * COARSE, o = state.o;
-  const patch = A.noise4(x * 0.031 + o, 51.2, z * 0.031, w * 0.5 + 3.1);
-  const crys = A.noise4(x * 0.017, 88.8, z * 0.017 + o, w * 0.63 + 9.4);
+  const patch = A.noiseS(x * 0.031 + o, z * 0.031, w * 0.5 + 3.1, 51.2);
+  const crys = A.noiseS(x * 0.017, z * 0.017 + o, w * 0.63 + 9.4, 88.8);
   const hn = M.clamp((h + t.amp * 0.9) / (t.amp * 2.1), 0, 1);
   const low = _c.setHex(pal.low), mid = _c2.setHex(pal.mid);
   out.copy(low).lerp(mid, M.smoothstep(hn + patch * 0.34, 0.18, 0.66));
@@ -207,7 +207,7 @@ function updateTerrainMesh(mesh, px, pz, w, force, deformOnly) {
       for (let i = 0; i < n; i++) {
         const x = cx - half + i * cell;
         const k = (j * n + i) * 3;
-        const h = amp * A.fbm4(x * state.planet.terr.freq * 1.1 + state.o, 11.7, z * state.planet.terr.freq * 1.1, ww * 0.42, 2) - amp * 0.32;
+        const h = amp * A.fbmS(x * state.planet.terr.freq * 1.1 + state.o, z * state.planet.terr.freq * 1.1, ww * 0.42, 11.7, 2) - amp * 0.32;
         posAttr.array[k] = x; posAttr.array[k + 1] = h; posAttr.array[k + 2] = z;
         const t = M.clamp((h + 3.2) / 8.5, 0, 1);
         colAttr.array[k] = 0.42 + 0.30 * t;
@@ -567,8 +567,24 @@ function setPlanet(pi, seed, editsArr) {
 
 function serializeEdits() { return Array.from(state.edits.entries()); }
 
+// 切换空间视图后：地形全量重建、把矿脉重新锚到新的地表
+function rebuild() {
+  for (const m of meshes) {
+    m.userData.lastW = NaN; m.userData.lastCX = NaN; m.userData.lastCZ = NaN;
+  }
+  state.dirty = true;
+  decorLastW = NaN; decorLastX = NaN; decorLastZ = NaN;
+  for (const n of nodes) {
+    n.ay = height(n.x, n.z, n.wPos) - n.depth;
+    n.lastW = NaN; n.echoW = NaN;
+  }
+  for (const sp of samples) {
+    sp.ay = height(sp.x, sp.z, sp.wPos) + 0.9;
+  }
+}
+
 A.world = {
-  state, height, baseHeight, editAt, deform, setPlanet, serializeEdits, nodes, samples,
+  state, height, baseHeight, editAt, deform, setPlanet, serializeEdits, rebuild, nodes, samples,
   resourceWindow, updateDecor, updateNodes, updateSamples,
   get planet() { return state.planet; },
   get storm() { return state.storm; },

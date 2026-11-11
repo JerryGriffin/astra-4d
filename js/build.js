@@ -422,9 +422,19 @@ function update(dt, w, px, pz, windFactor) {
     }
   }
 
-  // 模块跟随地形呼吸
+  // 模块跟随地形呼吸：每帧只重测一个模块的坐高（按足印四角取最高），其余复用
+  if (modules.length) {
+    A.build._seat = ((A.build._seat || 0) + 1) % modules.length;
+    const mm = modules[A.build._seat];
+    const f = mm.type === 'platform' ? 1.6 : mm.type === 'habitat' ? 2.3 : 1.1;
+    let gy = A.world.height(mm.x, mm.z, w);
+    gy = Math.max(gy,
+      A.world.height(mm.x + f, mm.z, w), A.world.height(mm.x - f, mm.z, w),
+      A.world.height(mm.x, mm.z + f, w), A.world.height(mm.x, mm.z - f, w));
+    mm.gy = gy;
+  }
   for (const m of modules) {
-    const gy = A.world.height(m.x, m.z, w);
+    const gy = m.gy === undefined ? m.mesh.position.y : m.gy;
     m.mesh.position.y = M.lerp(m.mesh.position.y || gy, gy, 1 - Math.exp(-dt * 6));
     for (const s of m.spin) {
       if (s.axis === 'y') s.obj.rotation.y += s.speed * dt;

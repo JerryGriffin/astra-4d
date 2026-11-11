@@ -9,8 +9,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <title>ASTRA·4D — 四维远征</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%23e8853c%27/%3E%3Ccircle cx=%2716%27 cy=%2714%27 r=%277%27 fill=%27%23f6dfb0%27/%3E%3Cpath d=%27M8 24c3-4 13-4 16 0z%27 fill=%27%237fb291%27/%3E%3C/svg%3E">
-<link rel="stylesheet" href="fonts/fonts.css?v=0.3.0">
-<link rel="stylesheet" href="style.css?v=0.3.0">
+<link rel="stylesheet" href="fonts/fonts.css?v=0.4.0">
+<link rel="stylesheet" href="style.css?v=0.4.0">
 </head>
 <body>
 <canvas id="scene"></canvas>
@@ -41,6 +41,9 @@
   </div>
 
   <div class="hud-tr">
+    <button id="view-btn" class="nav-btn view-btn" title="转换空间视图（G）">
+      <span class="vb-full">转换空间视图</span><span class="vb-axis view-axis">XYZ</span>
+    </button>
     <button class="nav-btn" data-panel="backpack">背包<span class="kb">B</span></button>
     <button class="nav-btn" data-panel="build">建造<span class="kb">C</span></button>
     <button class="nav-btn" data-panel="research">研究<span class="kb">V</span></button>
@@ -59,7 +62,7 @@
       <span class="kb-sep">R</span>
     </div>
     <div class="phase">
-      <div class="phase-h"><span>相位轴 W</span><b id="w-readout">+0.00</b></div>
+      <div class="phase-h"><span id="phase-label">相位轴 W</span><i id="view-tag" class="view-tag">X Y Z</i><b id="w-readout">+0.00</b></div>
       <div class="phase-track">
         <div class="phase-ticks"></div>
         <div id="phase-fill" class="phase-cursor"></div>
@@ -85,6 +88,7 @@
       <button id="btn-action" class="mbtn big">行动</button>
     </div>
     <div class="m-phase">
+      <button id="btn-view" class="mbtn wide view-btn-m">XYZ</button>
       <button id="btn-wup" class="mbtn wide">W +</button>
       <button id="btn-wdown" class="mbtn wide">W −</button>
     </div>
@@ -166,6 +170,7 @@
         <div><h3>四维</h3><p><b>Q / E</b> 沿相位轴 w 连续滑移（±6.5）。地形、矿脉、系绳都是 w 的连续函数。矿只在相位对齐时能采。</p></div>
         <div><h3>地形工具</h3><p>按住 <b>左键</b> 挖/填，<b>R</b> 切换模式。挖出的土进土壤罐；<b>T</b> 放系绳桩延伸氧气网络。</p></div>
         <div><h3>基地</h3><p><b>F</b> 与模块交互。太阳能/风力/电池/发电机构成电网；研究舱把样本变成字节；熔炉→精炼，化学实验室→复合材料。</p></div>
+        <div><h3>空间视图</h3><p><b>G</b> 或右上角「转换空间视图」在 <b>XYZ / XYW / YZW / XZW</b> 之间切换：同一片四维场换一个三维切片去看，相位轴自动变成被切掉的那一根（XYZ→W，XYW→Z，YZW→X，XZW→Y）。</p></div>
         <div><h3>载具</h3><p>打印漫游车跑远路，打印穿梭机换行星。载具停在基地的电网里会自动充电。</p></div>
         <div><h3>生存</h3><p>离开氧气网络会持续掉氧，归零后开始掉血。死亡回到最近的系绳桩。风暴里躲进庇护所能挡沙。</p></div>
       </div>
@@ -177,17 +182,16 @@
 <div id="title">
   <div class="title-grain"></div>
   <div class="title-inner">
-    <div class="title-kicker">EXO DYNAMICS · A CONTINUOUS 4TH DIMENSION</div>
     <h1 class="title-name">ASTRA<span>·</span>4D</h1>
-    <p class="title-sub">在 x y z 之外，还有 <em>w</em>。<br>
-      挖开粉彩的异星地表，把矿脉、平台与系绳搭成网络；<br>
-      按住 <b>Q / E</b> 滑移相位，整颗行星会像呼吸一样变形。</p>
+    <p class="title-sub">四维里的一次远征：挖开异星地表，把矿脉、平台与系绳接成网络。<br>
+      按住 <b>Q / E</b> 滑移相位轴，整颗行星会像呼吸一样变形；<br>
+      <b>G</b> 转换空间视图，在 <em>xyz</em> / <em>xyw</em> / <em>yzw</em> / <em>xzw</em> 之间换一个三维切片看它。</p>
     <div class="title-actions">
       <button id="start-btn" class="start-btn">新的远征</button>
       <button id="continue-btn" class="start-btn ghost hidden">继续存档</button>
     </div>
     <div class="title-controls">
-      <span>WASD 移动</span><i></i><span>左键 地形工具</span><i></i><span>Q/E 相位</span><i></i><span>F 交互</span><i></i><span>T 系绳</span><i></i><span>B/C/V 面板</span>
+      <span>WASD 移动</span><i></i><span>左键 地形工具</span><i></i><span>Q/E 相位</span><i></i><span>G 视图</span><i></i><span>F 交互</span><i></i><span>T 系绳</span><i></i><span>B/C/V 面板</span>
     </div>
   </div>
   <div class="title-foot">零构建 · 低多边形 · 粉彩星野 · 致敬 ASTRONEER</div>
@@ -203,13 +207,13 @@
 
 <div id="fx-fade" class="fx-fade"></div>
 
-<script src="vendor/three.min.js?v=0.3.0"></script>
-<script src="js/lib.js?v=0.3.0"></script>
-<script src="js/data.js?v=0.3.0"></script>
-<script src="js/world.js?v=0.3.0"></script>
-<script src="js/build.js?v=0.3.0"></script>
-<script src="js/player.js?v=0.3.0"></script>
-<script src="js/ui.js?v=0.3.0"></script>
-<script src="js/main.js?v=0.3.0"></script>
+<script src="vendor/three.min.js?v=0.4.0"></script>
+<script src="js/lib.js?v=0.4.0"></script>
+<script src="js/data.js?v=0.4.0"></script>
+<script src="js/world.js?v=0.4.0"></script>
+<script src="js/build.js?v=0.4.0"></script>
+<script src="js/player.js?v=0.4.0"></script>
+<script src="js/ui.js?v=0.4.0"></script>
+<script src="js/main.js?v=0.4.0"></script>
 </body>
 </html>

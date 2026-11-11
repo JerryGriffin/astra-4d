@@ -165,6 +165,43 @@ A.PLANETS = [
 
 A.planetById = (id) => A.PLANETS.find((p) => p.id === id) || A.PLANETS[0];
 
+// ---------------- 空间视图：同一片四维场，切不同的三维 ----------
+// 视图 "abc" 的含义：a = 地面横向，b = 高度方向，c = 地面纵向，缺的那个是相位轴。
+// xyz 就是原始视角（高度 y，相位 w）；换成 xyw 时地面变成 (x,w) 平面，相位轴变成 z。
+A.AXI = { x: 0, y: 1, z: 2, w: 3 };
+A.VIEW_IDS = ['xyz', 'xyw', 'yzw', 'xzw'];
+
+A.parseView = function (id) {
+  const s = String(id || 'xyz').toLowerCase();
+  if (!/^[xyzw]{3}$/.test(s)) return A.parseView('xyz');
+  const set = new Set(s.split(''));
+  let phase = 'w';
+  for (const k of ['w', 'z', 'y', 'x']) if (!set.has(k)) { phase = k; break; }
+  return { id: s, a: s[0], b: s[1], c: s[2], phase: phase };
+};
+
+A.view = A.parseView('xyz');
+
+// 按当前视图把「地面两轴 + 相位」摆进四维噪声的四个槽位；b 槽放常数 k
+const _s4 = [0, 0, 0, 0];
+A.slice4 = function (u, v, p, k) {
+  const vw = A.view, ix = A.AXI;
+  _s4[0] = _s4[1] = _s4[2] = _s4[3] = 0;
+  _s4[ix[vw.a]] = u;
+  _s4[ix[vw.b]] = k;
+  _s4[ix[vw.c]] = v;
+  _s4[ix[vw.phase]] = p;
+  return _s4;
+};
+A.noiseS = function (u, v, p, k) {
+  const s = A.slice4(u, v, p, k);
+  return A.noise4(s[0], s[1], s[2], s[3]);
+};
+A.fbmS = function (u, v, p, k, oct) {
+  const s = A.slice4(u, v, p, k);
+  return A.fbm4(s[0], s[1], s[2], s[3], oct);
+};
+
 // ---------------- 设备判定 ----------------
 A.mobile = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
   /Android|iPhone|iPad|iPod|Mobile|HarmonyOS/i.test(navigator.userAgent);
