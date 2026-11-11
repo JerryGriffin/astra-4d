@@ -128,6 +128,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.autoUpdate = false;
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0xf2d6a4, 46, 88);
@@ -196,7 +197,7 @@ scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff2dd, 1.18);
 sun.position.set(38, 52, 26);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(1024, 1024);
 sun.shadow.camera.near = 2;
 sun.shadow.camera.far = 190;
 const SC = 58;
@@ -245,8 +246,12 @@ function makeTerrainGrid(n, cell, material, wOffsetFn, mode) {
       idx.push(a, c, b, b, c, d);
     }
   }
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const posAttr = new THREE.BufferAttribute(pos, 3);
+  const colAttr = new THREE.BufferAttribute(col, 3);
+  posAttr.setUsage(THREE.DynamicDrawUsage);
+  colAttr.setUsage(THREE.DynamicDrawUsage);
+  geo.setAttribute('position', posAttr);
+  geo.setAttribute('color', colAttr);
   geo.setIndex(idx);
   const mesh = new THREE.Mesh(geo, material);
   mesh.userData = {
@@ -281,6 +286,13 @@ ghostA.renderOrder = 2; ghostB.renderOrder = 2;
 
 const _col = new THREE.Color();
 const _cc = new THREE.Color();
+const _handPos = new THREE.Vector3(), _beamDir = new THREE.Vector3(), _beamUp = new THREE.Vector3(0, 1, 0);
+const _jumpColor = new THREE.Color(0xd9c2a2);
+const _fwd = new THREE.Vector3(), _right = new THREE.Vector3(), _move = new THREE.Vector3();
+const _targetPos = new THREE.Vector3(), _off = new THREE.Vector3(), _desired = new THREE.Vector3();
+const _sd = new THREE.Vector3(), _sunPos = new THREE.Vector3();
+const W_LIMIT = 6.5;
+let wAtLimit = false;
 
 function updateTerrain(mesh, w, force) {
   const ud = mesh.userData;
@@ -288,9 +300,12 @@ function updateTerrain(mesh, w, force) {
   const cx = Math.round(player.x / cell) * cell;
   const cz = Math.round(player.z / cell) * cell;
   const ww = wOffsetFn(w);
+  const minDW = mode === 'main' ? 0.045 : 0.09;
+  const prevCX = ud.lastCX, prevCZ = ud.lastCZ;
   if (!force && Math.abs(cx - ud.lastCX) < cell * 0.5 &&
-      Math.abs(cz - ud.lastCZ) < cell * 0.5 && Math.abs(ww - ud.lastW) < 0.006) return;
+      Math.abs(cz - ud.lastCZ) < cell * 0.5 && Math.abs(ww - ud.lastW) < minDW) return;
   ud.lastCX = cx; ud.lastCZ = cz; ud.lastW = ww;
+  const moved = cx !== prevCX || cz !== prevCZ;
 
   const posAttr = mesh.geometry.attributes.position;
   const colAttr = mesh.geometry.attributes.color;
@@ -338,7 +353,9 @@ function updateTerrain(mesh, w, force) {
         let cg = lerp(lerp(Cc[a00 + 1], Cc[a10 + 1], u), lerp(Cc[a01 + 1], Cc[a11 + 1], u), v);
         let cb = lerp(lerp(Cc[a00 + 2], Cc[a10 + 2], u), lerp(Cc[a01 + 2], Cc[a11 + 2], u), v);
         // 每顶点颗粒（廉价哈希抖动，手绘低多边形质感）
-        const grain = (hash4(rx * 7 + 13, rz * 11 + 5, 0, Math.floor(ww * 20)) - 0.5) * 0.055;
+        const gw = ww * 20, gi = Math.floor(gw), gf = smooth(gw - gi);
+        const grain = (lerp(hash4(rx * 7 + 13, rz * 11 + 5, 0, gi),
+                            hash4(rx * 7 + 13, rz * 11 + 5, 0, gi + 1), gf) - 0.5) * 0.055;
         cr += grain; cg += grain; cb += grain;
         colAttr.array[k] = cr; colAttr.array[k + 1] = cg; colAttr.array[k + 2] = cb;
       }
@@ -361,8 +378,8 @@ function updateTerrain(mesh, w, force) {
   }
   posAttr.needsUpdate = true;
   colAttr.needsUpdate = true;
-  mesh.geometry.computeVertexNormals();
-  mesh.geometry.computeBoundingSphere();
+  if (mode === 'main') mesh.geometry.computeVertexNormals();
+  if (moved || force || !mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
 }
 
 // ============================================================
@@ -389,6 +406,9 @@ function roundedBox(w, h, d, round) {
 
 // —— 地表装饰：岩石 / 水晶簇 / 圆润灌木 ——
 const decor = [];
+const decorMeshes = [];
+const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _sv = new THREE.Vector3(), _pv = new THREE.Vector3(), _eul = new THREE.Euler();
+let decorLastW = NaN, decorLastX = NaN, decorLastZ = NaN;
 {
   const rockGeo = new THREE.IcosahedronGeometry(1, 0);
   const boulderGeo = roundedBox(1.6, 1.15, 1.35, 0.34);
@@ -425,11 +445,13 @@ const decor = [];
     im.castShadow = true;
     im.receiveShadow = true;
     scene.add(im);
+    decorMeshes.push(im);
   }
 }
 function updateDecor(w) {
-  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sv = new THREE.Vector3(), pv = new THREE.Vector3();
-  const eul = new THREE.Euler();
+  const qx = Math.round(player.x / 6) * 6, qz = Math.round(player.z / 6) * 6;
+  if (Math.abs(w - decorLastW) < 0.05 && qx === decorLastX && qz === decorLastZ) return;
+  decorLastW = w; decorLastX = qx; decorLastZ = qz;
   for (const d of decor) {
     const dw = Math.abs(w - d.wPos);
     // w 窗口：连续淡出，永不突变
@@ -438,14 +460,14 @@ function updateDecor(w) {
     const far = 1 - THREE.MathUtils.smoothstep(dist, 120, 205);
     const s = d.s * (0.06 + 0.94 * vis) * (0.05 + 0.95 * far);
     const y = terrainHeight(d.x, d.z, w) + d.s * 0.22;
-    eul.set(0, d.phase, 0);
-    q.setFromEuler(eul);
-    pv.set(d.x, y, d.z);
-    sv.setScalar(Math.max(s, 0.001));
-    m4.compose(pv, q, sv);
-    d.im.setMatrixAt(d.i, m4);
-    d.im.instanceMatrix.needsUpdate = true;
+    _eul.set(0, d.phase, 0);
+    _q.setFromEuler(_eul);
+    _pv.set(d.x, y, d.z);
+    _sv.setScalar(Math.max(s, 0.001));
+    _m4.compose(_pv, _q, _sv);
+    d.im.setMatrixAt(d.i, _m4);
   }
+  for (const im of decorMeshes) im.instanceMatrix.needsUpdate = true;
 }
 
 // ============================================================
@@ -459,15 +481,17 @@ const RES_TYPES = {
   malachite: { name: '孔雀石', color: PAL.malachite, weight: 14, shape: 'icosa0' },
   astronium: { name: '星辉矿', color: PAL.astronium, weight: 6,  shape: 'prism', glow: 0.75, rare: true }
 };
+const ECHO_GEO = new THREE.OctahedronGeometry(0.62, 0);
 function buildResourceMesh(type) {
   const t = RES_TYPES[type];
   const g = new THREE.Group();
   let core;
-  const mat = new THREE.MeshPhongMaterial({
+  if (!t.mat) t.mat = new THREE.MeshPhongMaterial({
     color: t.color, flatShading: true, shininess: 26,
     transparent: true, opacity: 1,
     emissive: t.color.clone().multiplyScalar(t.glow || 0.06)
   });
+  const mat = t.mat;
   if (t.shape === 'icosa') {
     core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.46, 1), mat);
     for (let i = 0; i < 5; i++) {
@@ -528,13 +552,14 @@ const resources = [];
       color: RES_TYPES[key].color, transparent: true, opacity: 0.16,
       depthWrite: false, wireframe: true
     });
-    const echoA = new THREE.Mesh(new THREE.OctahedronGeometry(0.62, 0), echoMat);
-    const echoB = new THREE.Mesh(new THREE.OctahedronGeometry(0.62, 0), echoMat.clone());
+    const echoA = new THREE.Mesh(ECHO_GEO, echoMat);
+    const echoB = new THREE.Mesh(ECHO_GEO, echoMat.clone());
     scene.add(mesh, echoA, echoB);
     resources.push({
       type: key, x, z, wPos, mesh, echoA, echoB,
       bobPhase: Math.random() * Math.PI * 2,
-      respawn: 0, harvested: false
+      respawn: 0, harvested: false,
+      lastW: NaN, baseY: 0, echoW: NaN, echoYA: 0, echoYB: 0
     });
   }
 }
@@ -544,27 +569,31 @@ function resourceWindow(dw) {
   return 1 - THREE.MathUtils.smoothstep(dw, 0.55, 1.55);
 }
 
-function updateResources(w, time) {
+function updateResources(w, time, dt) {
   for (const r of resources) {
     const dw = w - r.wPos;
     const adw = Math.abs(dw);
     const vis = resourceWindow(adw);
-    const y = terrainHeight(r.x, r.z, w) + 0.55 + Math.sin(time * 1.4 + r.bobPhase) * 0.07;
-    const dist = Math.hypot(r.x - player.x, r.z - player.z);
-    const near = 1 - THREE.MathUtils.smoothstep(dist, 110, 170);
 
     if (r.harvested) {
-      r.respawn -= 0.016;
+      r.respawn -= dt;
       if (r.respawn <= 0) {
         r.harvested = false;
         r.wPos = (Math.random() - 0.5) * 12; // 从另一个相位重新浮现
+        r.echoW = NaN;
       }
       r.mesh.visible = false; r.echoA.visible = false; r.echoB.visible = false;
       continue;
     }
 
-    const grow = vis * near;
-    r.mesh.visible = grow > 0.012;
+    if (!(Math.abs(w - r.lastW) < 0.05)) {
+      r.baseY = terrainHeight(r.x, r.z, w);
+      r.lastW = w;
+    }
+    const y = r.baseY + 0.55 + Math.sin(time * 1.4 + r.bobPhase) * 0.07;
+    const dist = Math.hypot(r.x - player.x, r.z - player.z);
+    const near = 1 - THREE.MathUtils.smoothstep(dist, 110, 170);
+
     r.mesh.position.set(r.x, y, r.z);
     const s = (0.22 + 0.78 * vis) * (0.05 + 0.95 * near);
     r.mesh.scale.setScalar(s);
@@ -576,10 +605,15 @@ function updateResources(w, time) {
     r.echoA.visible = echoAlpha > 0.01;
     r.echoB.visible = echoAlpha > 0.01;
     if (r.echoA.visible) {
-      r.echoA.position.set(r.x, terrainHeight(r.x, r.z, r.wPos + 0.95) + 0.55, r.z);
+      if (r.echoW !== r.wPos) {
+        r.echoYA = terrainHeight(r.x, r.z, r.wPos + 0.95) + 0.55;
+        r.echoYB = terrainHeight(r.x, r.z, r.wPos - 0.95) + 0.55;
+        r.echoW = r.wPos;
+      }
+      r.echoA.position.set(r.x, r.echoYA, r.z);
       r.echoA.rotation.y = time * 0.22 + r.bobPhase;
       r.echoA.material.opacity = echoAlpha;
-      r.echoB.position.set(r.x, terrainHeight(r.x, r.z, r.wPos - 0.95) + 0.55, r.z);
+      r.echoB.position.set(r.x, r.echoYB, r.z);
       r.echoB.rotation.y = time * 0.22 + r.bobPhase;
       r.echoB.material.opacity = echoAlpha * 0.7;
     }
@@ -646,26 +680,45 @@ scene.add(astronaut);
 // 8. 系绳桩 + 氧气管网
 // ============================================================
 const tethers = [];
+const TETHER_MAX = 80;
+const TETHER_GEO = {
+  post: new THREE.CylinderGeometry(0.075, 0.12, 1.5, 7),
+  ring: new THREE.TorusGeometry(0.19, 0.055, 7, 16),
+  bulb: new THREE.SphereGeometry(0.11, 9, 7),
+  foot: new THREE.CylinderGeometry(0.26, 0.32, 0.16, 8)
+};
+const TETHER_MAT = {
+  post: new THREE.MeshLambertMaterial({ color: 0xe8e2d2, flatShading: true }),
+  ring: new THREE.MeshLambertMaterial({ color: 0x8d78d6, emissive: 0x584a9e, flatShading: true }),
+  bulb: new THREE.MeshLambertMaterial({ color: 0x9be8ff, emissive: 0x9be8ff, flatShading: true }),
+  foot: new THREE.MeshLambertMaterial({ color: 0xc9c1ae, flatShading: true })
+};
 const tetherGroup = new THREE.Group();
 scene.add(tetherGroup);
 let tetherLine = null;
 
 function placeTether() {
+  if (tethers.length >= TETHER_MAX) {
+    let idx = 0, far = -1;
+    for (let i = 0; i < tethers.length; i++) {
+      const t = tethers[i];
+      const d = Math.hypot(t.x - player.x, t.z - player.z) + Math.abs(t.w - player.w) * 6;
+      if (d > far) { far = d; idx = i; }
+    }
+    tetherGroup.remove(tethers.splice(idx, 1)[0].group);
+    showToast('系绳桩已达上限 · 已回收最远的一根');
+  }
   const wPos = player.w;
   const y = terrainHeight(player.x, player.z, wPos);
   const g = new THREE.Group();
-  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.12, 1.5, 7),
-    new THREE.MeshLambertMaterial({ color: 0xe8e2d2, flatShading: true }));
+  const post = new THREE.Mesh(TETHER_GEO.post, TETHER_MAT.post);
   post.position.y = 0.75;
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.055, 7, 16),
-    new THREE.MeshLambertMaterial({ color: 0x8d78d6, emissive: 0x584a9e, flatShading: true }));
+  const ring = new THREE.Mesh(TETHER_GEO.ring, TETHER_MAT.ring);
   ring.position.y = 1.28;
   ring.rotation.x = Math.PI / 2;
-  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.11, 9, 7),
-    new THREE.MeshLambertMaterial({ color: 0x9be8ff, emissive: 0x9be8ff, flatShading: true }));
+  const bulb = new THREE.Mesh(TETHER_GEO.bulb, TETHER_MAT.bulb);
   bulb.position.y = 1.62;
-  const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.32, 0.16, 8),
-    new THREE.MeshLambertMaterial({ color: 0xc9c1ae, flatShading: true }));
+  const foot = new THREE.Mesh(TETHER_GEO.foot, TETHER_MAT.foot);
   foot.position.y = 0.08;
   for (const m of [post, ring, bulb, foot]) { m.castShadow = true; g.add(m); }
   g.position.set(player.x, y, player.z);
@@ -678,7 +731,7 @@ function placeTether() {
 }
 
 function rebuildTetherLine() {
-  if (tetherLine) { tetherGroup.remove(tetherLine); tetherLine.geometry.dispose(); }
+  if (tetherLine) { tetherGroup.remove(tetherLine); tetherLine.geometry.dispose(); tetherLine.material.dispose(); }
   if (tethers.length < 2) return;
   const pts = [];
   for (let i = 0; i < tethers.length - 1; i++) {
@@ -792,11 +845,11 @@ function setBeam(from, to, active, t) {
   }
   beam.visible = true;
   beam.material.opacity = 0.55 + Math.sin(t * 30) * 0.12;
-  const dir = to.clone().sub(from);
-  const len = dir.length();
+  _beamDir.copy(to).sub(from);
+  const len = _beamDir.length();
   beam.scale.set(1, len, 1);
-  beam.position.copy(from).addScaledVector(dir, 0.5);
-  beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+  beam.position.copy(from).addScaledVector(_beamDir, 0.5);
+  beam.quaternion.setFromUnitVectors(_beamUp, _beamDir.normalize());
 }
 
 // ============================================================
@@ -833,19 +886,19 @@ canvas.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 function updateCamera(dt) {
-  const targetPos = new THREE.Vector3(player.x, player.y + 1.55, player.z);
-  const off = new THREE.Vector3(
+  _targetPos.set(player.x, player.y + 1.55, player.z);
+  _off.set(
     Math.sin(camState.theta) * Math.sin(camState.phi),
     Math.cos(camState.phi),
     Math.cos(camState.theta) * Math.sin(camState.phi)
   ).multiplyScalar(camState.dist);
-  const desired = targetPos.clone().add(off);
+  _desired.copy(_targetPos).add(_off);
   // 不钻进地里
-  const gh = terrainHeight(desired.x, desired.z, player.w) + 1.15;
-  if (desired.y < gh) desired.y = gh;
+  const gh = terrainHeight(_desired.x, _desired.z, player.w) + 1.15;
+  if (_desired.y < gh) _desired.y = gh;
   const k = 1 - Math.exp(-dt * 8.5);
-  camState.pos.lerp(desired, k);
-  camState.look.lerp(targetPos, 1 - Math.exp(-dt * 11));
+  camState.pos.lerp(_desired, k);
+  camState.look.lerp(_targetPos, 1 - Math.exp(-dt * 11));
   camera.position.copy(camState.pos);
   camera.lookAt(camState.look);
 }
@@ -857,9 +910,10 @@ const keys = {};
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Space') e.preventDefault();
   keys[e.code] = true;
+  if (e.repeat) return;
   if (e.code === 'KeyH') document.getElementById('hint-panel').classList.toggle('collapsed');
   if (e.code === 'KeyF' && gameStarted && !player.dead) {
-    if (tethers.length < 80) placeTether();
+    placeTether();
   }
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -902,42 +956,52 @@ for (const [k, t] of Object.entries(RES_TYPES)) {
 }
 
 let toastTimer = 0;
-function showToast() {
+const DEFAULT_TOAST = el.toast.textContent;
+function showToast(text) {
+  el.toast.textContent = text || DEFAULT_TOAST;
   toastTimer = 1.6;
   el.toast.classList.add('show');
 }
+const setText = (node, v) => { if (node.textContent !== v) node.textContent = v; };
+const setHTML = (node, v) => { if (node.dataset.sig !== v) { node.innerHTML = v; node.dataset.sig = v; } };
 
+let lastOxy = -1, lastHp = -1, lastWStr = '', lastOxyState = '';
+let lastOxyWidth = '', lastHpWidth = '';
 function updateHUD() {
-  el.oxyFill.style.width = player.oxygen + '%';
-  el.oxyNum.textContent = Math.round(player.oxygen);
-  el.hpFill.style.width = player.health + '%';
-  el.hpNum.textContent = Math.round(player.health);
+  const oxy = Math.round(player.oxygen), hp = Math.round(player.health);
+  const oxyW = player.oxygen + '%', hpW = player.health + '%';
+  if (oxyW !== lastOxyWidth) { el.oxyFill.style.width = oxyW; lastOxyWidth = oxyW; }
+  if (hpW !== lastHpWidth) { el.hpFill.style.width = hpW; lastHpWidth = hpW; }
+  if (oxy !== lastOxy) { setText(el.oxyNum, String(oxy)); lastOxy = oxy; }
+  if (hp !== lastHp) { setText(el.hpNum, String(hp)); lastHp = hp; }
   el.oxyFill.classList.toggle('low', player.oxygen < 26);
-  el.oxyState.textContent = player.inNetwork ? '氧气供给中 · 系绳网络' : '远离系绳 · 氧气消耗';
+  const state = player.inNetwork ? '氧气供给中 · 系绳网络' : '远离系绳 · 氧气消耗';
+  if (state !== lastOxyState) { setText(el.oxyState, state); lastOxyState = state; }
   el.oxyState.classList.toggle('warn', !player.inNetwork);
 
-  el.wReadout.textContent = (player.w >= 0 ? '+' : '') + player.w.toFixed(3);
+  const wStr = (player.w >= 0 ? '+' : '') + player.w.toFixed(3);
+  if (wStr !== lastWStr) { setText(el.wReadout, wStr); lastWStr = wStr; }
 
-  // 相位标尺：±3.2 范围内的资源 / 系绳落点
+  // 相位标尺：±3.2 范围内的资源 / 系绳落点；坐标与透明度量化，避免每帧重建 DOM
   const RANGE = 3.2;
   let dots = '';
   let n = 0;
   for (const r of resources) {
-    if (r.harvested || n > 14) continue;
+    if (r.harvested || n >= 15) continue;
     const dw = r.wPos - player.w;
     if (Math.abs(dw) > RANGE) continue;
-    const pct = 50 + (dw / RANGE) * 48;
-    const vis = resourceWindow(Math.abs(dw));
+    const pct = Math.round((50 + (dw / RANGE) * 48) * 2) / 2;
+    const vis = Math.round(resourceWindow(Math.abs(dw)) * 20) / 20;
     dots += `<span class="phase-dot res" style="left:${pct}%;opacity:${0.25 + 0.75 * vis}"></span>`;
     n++;
   }
   for (const t of tethers) {
     const dw = t.w - player.w;
     if (Math.abs(dw) > RANGE) continue;
-    const pct = 50 + (dw / RANGE) * 48;
+    const pct = Math.round((50 + (dw / RANGE) * 48) * 2) / 2;
     dots += `<span class="phase-dot tether" style="left:${pct}%"></span>`;
   }
-  el.phaseDots.innerHTML = dots;
+  setHTML(el.phaseDots, dots);
 }
 
 // ============================================================
@@ -948,17 +1012,22 @@ let harvestProgress = 0;
 
 function findHarvestTarget() {
   let best = null, bestD = 3.6;
+  let fallback = null, fallbackD = 3.6;
   for (const r of resources) {
     if (r.harvested) continue;
     const d = Math.hypot(r.x - player.x, r.z - player.z);
-    if (d < bestD) { bestD = d; best = r; }
+    if (d >= 3.6) continue;
+    if (Math.abs(player.w - r.wPos) < 0.55) {
+      if (d < bestD) { bestD = d; best = r; }
+    } else if (d < fallbackD) { fallbackD = d; fallback = r; }
   }
-  return best;
+  return best || fallback;
 }
 
 function updateHarvest(dt, time) {
+  if (player.dead) return;
   const near = findHarvestTarget();
-  const handPos = new THREE.Vector3(
+  const handPos = _handPos.set(
     player.x + Math.sin(player.facing + 0.85) * 0.65,
     player.y + 1.18,
     player.z + Math.cos(player.facing + 0.85) * 0.65
@@ -967,11 +1036,11 @@ function updateHarvest(dt, time) {
   if (near) {
     const aligned = Math.abs(player.w - near.wPos) < 0.55;
     if (aligned) {
-      el.prompt.innerHTML = `按住 <b>左键</b> 采集 · ${RES_TYPES[near.type].name}`;
+      setHTML(el.prompt, `按住 <b>左键</b> 采集 · ${RES_TYPES[near.type].name}`);
       el.prompt.classList.add('show');
       el.crosshair.classList.add('on');
     } else {
-      el.prompt.innerHTML = `<b>相位未对齐</b> · 滑移 W 至 ${(near.wPos >= 0 ? '+' : '') + near.wPos.toFixed(2)}`;
+      setHTML(el.prompt, `<b>相位未对齐</b> · 滑移 W 至 ${(near.wPos >= 0 ? '+' : '') + near.wPos.toFixed(2)}`);
       el.prompt.classList.add('show');
       el.crosshair.classList.remove('on');
       if (toastTimer <= 0) showToast();
@@ -1020,7 +1089,29 @@ function updateHarvest(dt, time) {
 const clock = new THREE.Clock();
 let elapsed = 0;
 let dayTime = 0.18; // 0=清晨 0.5=黄昏
-let qualityTier = 0, frameAcc = 0, frameCnt = 0;
+let qualityTier = 2;
+let qAcc = 0, qCnt = 0, qWarm = 2.0;
+let shadowTick = 0;
+function setQuality(t) {
+  if (t === qualityTier) return;
+  qualityTier = t;
+  const dpr = window.devicePixelRatio || 1;
+  renderer.setPixelRatio(t === 0 ? 1 : t === 1 ? Math.min(dpr, 1.25) : Math.min(dpr, 2));
+  const size = t === 0 ? 512 : 1024;
+  if (sun.shadow.mapSize.x !== size) {
+    sun.shadow.mapSize.set(size, size);
+    if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+  }
+}
+function updateQuality(rawDt) {
+  if (qWarm > 0) { qWarm -= rawDt; return; }
+  qAcc += rawDt; qCnt++;
+  if (qAcc < 2) return;
+  const avg = qAcc / qCnt;
+  if (avg > 0.042 && qualityTier > 0) setQuality(qualityTier - 1);
+  else if (avg < 0.020 && qualityTier < 2) setQuality(qualityTier + 1);
+  qAcc = 0; qCnt = 0;
+}
 
 function updateDayCycle(dt) {
   dayTime = (dayTime + dt / 560) % 1;
@@ -1036,9 +1127,11 @@ function updateDayCycle(dt) {
   scene.userData.stars.material.opacity = Math.max(0, dusk * 1.25 - 0.32);
   // 太阳缓慢巡游
   const sa = dayTime * Math.PI * 2 + 0.7;
-  const sd = new THREE.Vector3(Math.cos(sa) * 0.75, 0.42 + Math.sin(sa * 0.5) * 0.28, Math.sin(sa) * 0.75).normalize();
-  skyUniforms.sunDir.value.copy(sd);
-  sun.position.copy(sd).multiplyScalar(85).add(new THREE.Vector3(player.x, 0, player.z));
+  _sd.set(Math.cos(sa) * 0.75, 0.42 + Math.sin(sa * 0.5) * 0.28, Math.sin(sa) * 0.75).normalize();
+  skyUniforms.sunDir.value.copy(_sd);
+  _sunPos.copy(_sd).multiplyScalar(85);
+  _sunPos.x += player.x; _sunPos.z += player.z;
+  sun.position.copy(_sunPos);
   sun.target.position.set(player.x, player.y, player.z);
 }
 
@@ -1054,22 +1147,29 @@ function updatePlayer(dt) {
   const wTarget = wInput * 1.35;
   player.wVel += (wTarget - player.wVel) * (1 - Math.exp(-dt * 6.5));
   player.w += player.wVel * dt;
+  let atLimit = false;
+  if (player.w > W_LIMIT) { player.w = W_LIMIT; atLimit = true; }
+  else if (player.w < -W_LIMIT) { player.w = -W_LIMIT; atLimit = true; }
+  if (atLimit) {
+    player.wVel = 0;
+    if (!wAtLimit) { showToast('已到相位带边界 · 按 Q 反向滑移'); wAtLimit = true; }
+  } else wAtLimit = false;
 
   // —— 移动（相机相对） ——
-  const fwd = new THREE.Vector3(-Math.sin(camState.theta), 0, -Math.cos(camState.theta));
-  const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
-  const move = new THREE.Vector3();
-  if (keys['KeyW'] || keys['ArrowUp']) move.add(fwd);
-  if (keys['KeyS'] || keys['ArrowDown']) move.sub(fwd);
-  if (keys['KeyA'] || keys['ArrowLeft']) move.sub(right);
-  if (keys['KeyD'] || keys['ArrowRight']) move.add(right);
+  _fwd.set(-Math.sin(camState.theta), 0, -Math.cos(camState.theta));
+  _right.set(-_fwd.z, 0, _fwd.x);
+  _move.set(0, 0, 0);
+  if (keys['KeyW'] || keys['ArrowUp']) _move.add(_fwd);
+  if (keys['KeyS'] || keys['ArrowDown']) _move.sub(_fwd);
+  if (keys['KeyA'] || keys['ArrowLeft']) _move.sub(_right);
+  if (keys['KeyD'] || keys['ArrowRight']) _move.add(_right);
   const running = keys['ShiftLeft'] || keys['ShiftRight'];
   const speed = running ? 8.4 : 5.1;
-  if (move.lengthSq() > 0) {
-    move.normalize().multiplyScalar(speed * dt);
-    player.x += move.x;
-    player.z += move.z;
-    const targetFacing = Math.atan2(move.x, move.z);
+  if (_move.lengthSq() > 0) {
+    _move.normalize().multiplyScalar(speed * dt);
+    player.x += _move.x;
+    player.z += _move.z;
+    const targetFacing = Math.atan2(_move.x, _move.z);
     let d = targetFacing - player.facing;
     while (d > Math.PI) d -= Math.PI * 2;
     while (d < -Math.PI) d += Math.PI * 2;
@@ -1081,7 +1181,7 @@ function updatePlayer(dt) {
   if (player.grounded && keys['Space']) {
     player.vy = 7.6;
     player.grounded = false;
-    spawnBurst(player.x, player.y + 0.1, player.z, new THREE.Color(0xd9c2a2), 8, 1.1);
+    spawnBurst(player.x, player.y + 0.1, player.z, _jumpColor, 8, 1.1);
   }
   player.vy -= 21 * dt;
   player.y += player.vy * dt;
@@ -1110,7 +1210,7 @@ function updatePlayer(dt) {
   astronaut.position.set(player.x, player.y, player.z);
   astronaut.rotation.y = player.facing;
   const ud = astronaut.userData;
-  const speedFactor = move.lengthSq() > 0 ? (running ? 1.45 : 1) : 0;
+  const speedFactor = _move.lengthSq() > 0 ? (running ? 1.45 : 1) : 0;
   const t = elapsed * 9 * (0.4 + speedFactor);
   ud.legL.rotation.x = Math.sin(t) * 0.62 * speedFactor;
   ud.legR.rotation.x = -Math.sin(t) * 0.62 * speedFactor;
@@ -1128,6 +1228,7 @@ function updatePlayer(dt) {
 function die() {
   player.dead = true;
   player.deadTimer = 2.4;
+  harvesting = false; harvestTarget = null; harvestProgress = 0;
   el.death.classList.remove('hidden');
 }
 function respawn() {
@@ -1165,51 +1266,39 @@ function updateAmbience(dt) {
 // 主循环
 function animate() {
   requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.05);
+  const rawDt = Math.min(clock.getDelta(), 0.25);
+  const dt = Math.min(rawDt, 0.05);
   elapsed += dt;
 
-  // —— 自适应画质：前几秒如果帧率过低，降分辨率/阴影 ——
-  if (qualityTier === 0 && elapsed > 1.5 && elapsed < 7) {
-    frameAcc += dt; frameCnt++;
-    if (frameCnt > 90) {
-      const avg = frameAcc / frameCnt;
-      if (avg > 0.042) { // < 24fps
-        qualityTier = 1;
-        renderer.setPixelRatio(1);
-        sun.shadow.mapSize.set(1024, 1024);
-        if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
-      } else if (avg > 0.024) { // < 42fps
-        qualityTier = 1;
-        renderer.setPixelRatio(1);
-      } else {
-        qualityTier = 2;
-      }
-    }
-  }
+  updateQuality(rawDt);
 
-  updatePlayer(dt);
+  // 标题幕期间只渲染静态世界，不推进玩法状态
+  if (gameStarted) updatePlayer(dt);
   updateCamera(dt);
   updateDayCycle(dt);
   updateAmbience(dt);
 
-  // 地形：主切片 + 相位幽灵层
-  // 幽灵层同样连续变形（updateTerrain 内部有缓存，静止时零开销）
+  // 地形：主切片 + 相位幽灵层（内部按 Δw 与跨格缓存，静止时零开销）
   updateTerrain(mainTerrain, player.w, false);
   updateTerrain(ghostA, player.w, false);
   updateTerrain(ghostB, player.w, false);
 
   updateDecor(player.w);
-  updateResources(player.w, elapsed);
+  updateResources(player.w, elapsed, gameStarted ? dt : 0);
   updateTethers(player.w, elapsed);
-  if (gameStarted) updateHarvest(dt, elapsed);
-  updateParticles(dt);
 
-  if (toastTimer > 0) {
-    toastTimer -= dt;
-    if (toastTimer <= 0) el.toast.classList.remove('show');
+  if (gameStarted) {
+    if (!player.dead) updateHarvest(dt, elapsed);
+    updateParticles(dt);
+    if (toastTimer > 0) {
+      toastTimer -= dt;
+      if (toastTimer <= 0) el.toast.classList.remove('show');
+    }
+    updateHUD();
   }
 
-  updateHUD();
+  // 阴影贴图隔帧刷新；太阳与玩家移动缓慢，一帧延迟不可见
+  if ((shadowTick++ & 1) === 0) renderer.shadowMap.needsUpdate = true;
   renderer.render(scene, camera);
 }
 
