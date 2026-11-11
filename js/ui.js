@@ -161,7 +161,7 @@ function chipHTML(id, n) {
 }
 function renderBackpack() {
   const inv = A.player.inv;
-  const order = { raw: 0, refined: 1, composite: 2, gas: 3, special: 4 };
+  const order = { raw: 0, refined: 1, dust: 2, composite: 3, gas: 4, special: 5 };
   const ids = Object.keys(inv).filter((k) => inv[k] > 0)
     .sort((a, b) => (order[A.item(a).cat] - order[A.item(b).cat]) || a.localeCompare(b));
   el['backpack-grid'].innerHTML = ids.length
@@ -285,9 +285,10 @@ function renderModule(mod) {
   el['module-title'].textContent = r.name || '庇护所';
   const power = (r.power ? '耗电 ' + r.power + 'A' : '') +
     (r.gen ? (r.gen.type === 'solar' ? '日照发电 ' : r.gen.type === 'wind' ? '风力发电 ' : r.gen.type === 'fuel' ? '烧碳发电 ' : '恒定发电 ') + r.gen.a + 'A' : '') +
-    (r.cap ? ' · 储电 ' + Math.round(mod.charge) + '/' + r.cap : '');
-  el['module-sub'].textContent = power + (mod.powered ? ' · 通电' : ' · 断电');
-  el['module-sub'].classList.toggle('bad', !mod.powered && (r.power > 0));
+    (r.cap ? ' · 储电 ' + Math.round(mod.charge) + '/' + r.cap : '') +
+    ((r.power || r.gen) ? ' · 电压 ' + (A.VOLTS[r.volt || 1] || 'LV') : '');
+  el['module-sub'].textContent = power + (mod.fused > 0 ? ' · 熔断器烧毁 ' + Math.ceil(mod.fused) + 's' : mod.powered ? ' · 通电' : ' · 断电');
+  el['module-sub'].classList.toggle('bad', (!mod.powered && (r.power > 0)) || mod.fused > 0);
 
   let body = '';
   const jobBar = () => mod.job
@@ -302,11 +303,20 @@ function renderModule(mod) {
           <span class="sw" style="background:${A.itemColor(k)}"></span><span class="nm">${A.item(k).name}</span>
           <span class="ct">×${A.player.inv[k]}</span><span class="gain">+${A.item(k).bytes}</span></button>`).join('') || '<div class="empty">没有可研究的样本</div>'}</div>`;
   } else if (mod.type === 'smelter') {
-    body = jobBar() + `<div class="hint">熔炼：1 份天然资源 → 1 份精炼资源，每个 4 秒。</div><div class="rows">${Object.entries(A.SMELT).map(([from, to]) =>
+    body = jobBar() + `<div class="hint">熔炼：1 份天然资源或碎矿 → 1 份精炼资源，每个 4 秒。碎矿由破碎机产出（2 矿→3 碎矿，净賺 50%）。</div><div class="rows">${Object.entries(A.SMELT).map(([from, to]) =>
       `<button class="row" data-mact="smelt:${from}">
         <span class="sw" style="background:${A.itemColor(from)}"></span><span class="nm">${A.item(from).name}</span>
         <span class="arrow">→</span><span class="sw" style="background:${A.itemColor(to)}"></span><span class="nm">${A.item(to).name}</span>
         <span class="ct">×${A.player.count(from)}</span></button>`).join('')}</div>`;
+  } else if (mod.type === 'crusher') {
+    body = jobBar() + `<div class="hint">粉碎：2 份金属矿 → 3 份碎矿（碎矿熔炉 1:1 出金属），每次 ${Math.round(A.CRUSH_BY_CHANCE * 100)}% 概率副产一份稀有粉。</div>
+      <div class="rows">${Object.entries(A.CRUSH).map(([from, c]) => {
+        const ok = A.player.count(from) >= 2;
+        return `<button class="row ${ok ? '' : 'dim'}" data-mact="crush:${from}">
+          <span class="sw" style="background:${A.itemColor(from)}"></span><span class="nm">${A.item(from).name}</span>
+          <span class="arrow">→</span><span class="sw" style="background:${A.itemColor(c.cr)}"></span><span class="nm">${A.item(c.cr).name}×3</span>
+          <span class="ct">×${A.player.count(from)}</span></button>`;
+      }).join('')}</div>`;
   } else if (mod.type === 'chemistry') {
     body = jobBar() + `<div class="hint">化学实验室：两种资源合成复合材料，标 🔬 的需要对应气体。</div><div class="rows">${A.CHEM.map((c, i) => {
       const gasOk = !c.gas || A.player.count(c.gas) > 0;
@@ -379,6 +389,21 @@ function moduleClick(e) {
       total: 4, label: '熔炼 ' + A.item(val).name, out: A.SMELT[val],
       onDone: () => { A.ui.toast('产出 ' + A.item(A.SMELT[val]).name); }
     })) A.player.takeItem(val, 1);
+    return;
+  }
+  if (act === 'crush') {
+    const c = A.CRUSH[val];
+    if (!c) return;
+    if (A.player.count(val) < 2) { A.sfx.err(); toast('需要 2 份' + A.item(val).name); return; }
+    if (A.build.startJob(mod, {
+      total: 5, label: '粉碎 ' + A.item(val).name, out: c.cr, qty: 3, by: c.by,
+      onDone: (j) => {
+        if (j.by && Math.random() < A.CRUSH_BY_CHANCE) {
+          A.player.addItem(j.by, 1);
+          toast('副产 ' + A.item(j.by).name);
+        }
+      }
+    })) A.player.takeItem(val, 2);
     return;
   }
   if (act === 'chem') {

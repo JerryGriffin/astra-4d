@@ -88,6 +88,17 @@ function meshFor(type) {
       put(g, new THREE.TorusGeometry(0.6, 0.06, 5, 12), MAT.dark, 0, 1.42, 0.92);
       break;
     }
+    case 'crusher': {
+      put(g, box(2.3, 0.9, 1.9, 0.16), MAT.cream2, 0, 0.75, 0);
+      put(g, box(1.6, 0.55, 1.3, 0.1), MAT.dark, 0, 1.5, -0.25);
+      put(g, box(1.7, 0.16, 0.9, 0.04), MAT.orange, 0, 1.82, -0.25);
+      const r1 = put(g, new THREE.CylinderGeometry(0.42, 0.42, 1.5, 10), MAT.metal, -0.35, 1.15, 0.45, 0, 0, Math.PI / 2);
+      const r2 = put(g, new THREE.CylinderGeometry(0.42, 0.42, 1.5, 10), MAT.metal, 0.45, 1.15, 0.45, 0, 0, Math.PI / 2);
+      spin.push({ obj: r1, axis: 'x', speed: 5.0 });
+      spin.push({ obj: r2, axis: 'x', speed: -4.2 });
+      put(g, box(1.5, 0.5, 0.16, 0.05), MAT.dark, 0, 0.55, 1.0);
+      break;
+    }
     case 'chemistry': {
       put(g, box(2.4, 0.55, 1.9, 0.12), MAT.cream2, 0, 0.5, 0);
       put(g, new THREE.CylinderGeometry(0.5, 0.5, 1.7, 10), MAT.glass, -0.65, 1.5, 0);
@@ -223,6 +234,7 @@ function add(type, x, z, rot, st) {
     charge: st && st.ch ? st.ch : 0,
     eff: 1, net: -1,
     job: null, powered: false,
+    fused: 0,
     bob: Math.random() * 6.28
   };
   modules.push(mod);
@@ -377,11 +389,32 @@ function update(dt, w, px, pz, windFactor) {
       // 制氧机常开；其他用电器有加工任务时才吃电
       if (isLoad(m) && (m.job || m.type === 'oxygenator')) demand += m.def.power;
     }
+    // 熔断器（0.6.0）：超载（需求 > 发电 + 电池放电上限）持续 2s → 烧断，全体停机 12s
+    let fused = false;
+    for (const m of net) if (m.fused > 0) { fused = true; break; }
+    const wasFused = fused;
+    const discharge = net.filter((m) => m.def.cap).length * A.BATTERY_DISCHARGE;
+    if (!fused && demand > supply + discharge + 0.05) {
+      const sig = net.map((m) => m.type + ':' + m.x.toFixed(1) + ',' + m.z.toFixed(1)).sort().join('|');
+      const over = A.build._over || (A.build._over = {});
+      over[sig] = (over[sig] || 0) + dt;
+      if (over[sig] >= A.FUSE_OVERLOAD_TIME) {
+        over[sig] = 0;
+        for (const m of net) m.fused = A.FUSE_RESET_TIME;
+        A.sfx.err();
+        A.ui.toast('电网过载 · 熔断器烧毁，' + A.FUSE_RESET_TIME + ' 秒后重置');
+      }
+    } else if (!fused && demand <= supply + discharge + 0.05) {
+      const sig = net.map((m) => m.type + ':' + m.x.toFixed(1) + ',' + m.z.toFixed(1)).sort().join('|');
+      if (A.build._over) A.build._over[sig] = 0;
+    }
     let eff = 1;
-    if (demand > 0) {
+    if (fused) {
+      eff = 0;
+    } else if (demand > 0) {
       eff = Math.min(1, supply / demand);
       if (eff < 1 && stored > 0) {
-        const extra = Math.min(stored / Math.max(dt, 1e-3), demand - supply);
+        const extra = Math.min(Math.min(stored / Math.max(dt, 1e-3), discharge), demand - supply);
         eff = Math.min(1, (supply + extra) / demand);
       }
     }
@@ -394,7 +427,7 @@ function update(dt, w, px, pz, windFactor) {
       for (const m of net) if (m.def.cap) m.charge = Math.min(m.def.cap, m.charge + push / Math.max(1, net.filter((x) => x.def.cap).length));
       netFlow -= push;
     } else if (netFlow < 0 && stored > 0) {
-      let need = -netFlow;
+      let need = Math.min(-netFlow, discharge * dt); // 放电也不能超过电池上限
       for (const m of net) {
         if (!m.def.cap) continue;
         const take = Math.min(m.charge, need);
@@ -402,8 +435,9 @@ function update(dt, w, px, pz, windFactor) {
       }
     }
     for (const m of net) {
-      m.eff = isLoad(m) ? eff : 1;
-      m.powered = supply > 0.01 || stored > 0.01;
+      m.eff = isLoad(m) ? (fused ? 0 : eff) : 1;
+      m.powered = (supply > 0.01 || stored > 0.01) && !fused;
+      if (m.fused > 0) m.fused = Math.max(0, m.fused - dt);
       // 用电器推进加工
       if (m.job) {
         m.job.t += dt * (0.2 + 0.8 * m.eff);
@@ -411,6 +445,9 @@ function update(dt, w, px, pz, windFactor) {
           finishJob(m);
         }
       }
+    }
+    if (wasFused && !net.some((m) => m.fused > 0)) {
+      A.ui.toast('熔断器已重置 · 电网恢复供电');
     }
   }
 
@@ -458,7 +495,7 @@ function finishJob(m) {
   if (!job) return;
   if (job.out) A.player.addItem(job.out, job.qty || 1);
   if (job.bytes) { A.player.bytes += job.bytes; A.ui.toast('+' + job.bytes + ' 字节'); }
-  if (job.onDone) job.onDone();
+  if (job.onDone) job.onDone(job);
   A.sfx.ok();
   A.ui.refreshModule(m);
 }
