@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ASTRA·4D — 四维远征</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<!-- ============ HUD ============ -->
+<div id="hud" class="hidden">
+  <!-- 生命体征：左上，细长条 -->
+  <div class="vitals">
+    <div class="vital">
+      <svg class="vic-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c2.5 3.2 6.2 6.4 6.2 10.2A6.2 6.2 0 0 1 12 19.4a6.2 6.2 0 0 1-6.2-6.2C5.8 9.4 9.5 6.2 12 3z"/></svg>
+      <div class="bar"><div id="oxygen-fill" class="fill oxygen"></div></div>
+      <span id="oxygen-num" class="num">100</span>
+    </div>
+    <div class="vital">
+      <svg class="vic-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.7S3.5 15.3 3.5 9.6A4.6 4.6 0 0 1 12 7a4.6 4.6 0 0 1 8.5 2.6c0 5.7-8.5 11.1-8.5 11.1z"/></svg>
+      <div class="bar"><div id="health-fill" class="fill health"></div></div>
+      <span id="health-num" class="num">100</span>
+    </div>
+    <div id="oxy-state" class="oxy-state">氧气充足</div>
+  </div>
+
+  <!-- 操作提示：右上，可折叠 -->
+  <button id="hint-toggle" class="hint-toggle" aria-label="操作说明">操作 <span class="kbd">H</span></button>
+  <div id="hint-panel" class="hint-panel">
+    <div class="hint-row"><span class="keys"><b>W A S D</b> 移动</span><span class="keys"><b>Shift</b> 疾跑</span></div>
+    <div class="hint-row"><span class="keys"><b>空格</b> 跳跃</span><span class="keys"><b>拖拽鼠标</b> 视角</span></div>
+    <div class="hint-row hi"><span class="keys"><b>Q / E</b> 相位滑移 w⁻ / w⁺</span></div>
+    <div class="hint-row"><span class="keys"><b>按住左键</b> 采集资源</span><span class="keys"><b>F</b> 放置系绳桩</span></div>
+  </div>
+
+  <!-- 相位标尺：左下，w 连续轴 -->
+  <div class="phase-wrap">
+    <div class="phase-head">
+      <span class="phase-label">相位轴 W</span>
+      <span id="w-readout" class="w-readout">+0.000</span>
+    </div>
+    <div id="phase-track" class="phase-track">
+      <div class="phase-ticks"></div>
+      <div id="phase-dots" class="phase-dots"></div>
+      <div id="phase-cursor" class="phase-cursor"></div>
+    </div>
+    <div class="phase-foot"><span>q 减相</span><span class="phase-foot-mid">连续滑移 · 世界随之呼吸</span><span>e 增相</span></div>
+  </div>
+
+  <!-- 背包：右下 -->
+  <div class="inv-wrap">
+    <div class="inv-title">样本舱</div>
+    <div id="inv-chips" class="inv-chips"></div>
+  </div>
+
+  <!-- 上下文提示 -->
+  <div id="prompt" class="prompt"></div>
+
+  <!-- 准星 -->
+  <div id="crosshair" class="crosshair"><i></i></div>
+
+  <!-- 相位警告 -->
+  <div id="phase-toast" class="phase-toast">相位未对齐 · 按 Q / E 滑移至资源的 W 相位</div>
+</div>
+
+<!-- ============ 标题幕 ============ -->
+<div id="title">
+  <div class="title-grain"></div>
+  <div class="title-inner">
+    <div class="title-kicker">四维远征 · A CONTINUOUS 4TH DIMENSION</div>
+    <h1 class="title-name">ASTRA<span class="title-dot">·</span>4D</h1>
+    <p class="title-sub">在 x y z 之外，还有 <em>w</em>。<br>
+      地形、矿脉与系绳都是 w 的<b>连续函数</b>——按住 <b>Q / E</b> 滑移相位，<br>
+      整个世界会像呼吸一样平滑变形。</p>
+    <div class="title-actions">
+      <button id="start-btn" class="start-btn">进入相界</button>
+      <div class="title-controls">
+        <span>WASD 移动</span><i></i><span>空格 跳跃</span><i></i><span>Q/E 相位</span><i></i><span>左键 采集</span><i></i><span>F 系绳</span>
+      </div>
+    </div>
+  </div>
+  <div class="title-foot">低多边形 · 粉彩星野 · 致敬 ASTRONEER 的几何美学</div>
+</div>
+
+<!-- ============ 死亡幕 ============ -->
+<div id="death" class="death hidden">
+  <div class="death-inner">
+    <div class="death-kicker">氧气耗尽</div>
+    <div class="death-title">宇航员已回收</div>
+    <div class="death-sub">相位信标将你带回最近的系绳桩</div>
+  </div>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
