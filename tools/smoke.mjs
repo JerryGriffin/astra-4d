@@ -146,6 +146,65 @@ await sleep(300);
 await shot('07-panel-research.png');
 await evalJS(`A.ui.closePanels()`);
 
+// 矿脉：Astroneer 式沉积块（数量 / 埋藏比例 / 块数）
+report.deposits = await evalJS(`(() => {
+  const A = window.A;
+  const ns = A.world.nodes;
+  const shallow = ns.filter(n => n.depth < 0.42).length;
+  return { count: ns.length, shallow, deep: ns.length - shallow, units0: ns[0].units, blobs0: ns[0].mesh.children.length };
+})()`);
+
+// 挖矿：站到露头矿脉旁按住挖掘，应逐块崩进背包
+report.mineSetup = await evalJS(`(() => {
+  const A = window.A;
+  const n = A.world.nodes.find(x => x.depth < 0.42 && !x.harvested);
+  if (!n) return 'none';
+  A.player.w = n.wPos;
+  A.player.x = n.x + 2.2; A.player.z = n.z;
+  A.player.toolMode = 'dig';
+  A.player.y = A.world.height(A.player.x, A.player.z, A.player.w) + 0.4;
+  A.player.cam.theta = Math.PI / 2;
+  A.player.cam.phi = 0.95;
+  A.player.cam.dist = 7.5;
+  window.__mine = { type: n.type, before: n.units, inv0: A.player.count(n.type) };
+  return { type: n.type, units: n.units, depth: +n.depth.toFixed(2) };
+})()`);
+await sleep(600);
+await shot('06b-deposit.png');
+await evalJS(`(__astra.input.action = true, 1)`);
+await sleep(6000);
+await evalJS(`(__astra.input.action = false, 1)`);
+report.mineResult = await evalJS(`(() => {
+  const A = window.A;
+  const m = window.__mine;
+  return { type: m.type, unitsBefore: m.before, invBefore: m.inv0, invNow: A.player.count(m.type), exposed: A.world.nodes.filter(n => n.exposed).length };
+})()`);
+
+// 遗址
+report.ruins = await evalJS(`(() => {
+  const A = window.A;
+  const kinds = {};
+  for (const s of A.ruins.sites) kinds[s.kind] = (kinds[s.kind] || 0) + 1;
+  return { sites: A.ruins.sites.length, entries: A.ruins.sites.reduce((a, s) => a + s.entries.length, 0), kinds };
+})()`);
+report.ruinLoot = await evalJS(`(() => {
+  const A = window.A;
+  const s = A.ruins.sites[0];
+  const e = s.entries[0];
+  const wx = s.x + e.mesh.position.x * Math.cos(s.rot) + e.mesh.position.z * Math.sin(s.rot);
+  const wz = s.z - e.mesh.position.x * Math.sin(s.rot) + e.mesh.position.z * Math.cos(s.rot);
+  A.player.x = wx + 2.4; A.player.z = wz + 1.2;
+  A.player.w = 0;
+  A.player.y = A.world.height(A.player.x, A.player.z, A.player.w) + 0.4;
+  A.player.cam.theta = Math.atan2(2.4, 1.2);
+  const before = { scrap: A.player.count('scrap'), bytes: A.player.bytes };
+  const near = A.ruins.nearest(A.player.x, A.player.z, 5.5);
+  const res = near ? A.ruins.loot(near) : null;
+  return { found: !!near, res, before, after: { scrap: A.player.count('scrap'), bytes: A.player.bytes }, serialized: A.ruins.serialize().length };
+})()`);
+await sleep(700);
+await shot('06c-ruin.png');
+
 // 洪水：制造与研究
 // 空间视图：切一圈，地形高度应随之改变
 report.viewBefore = await evalJS(`({ view: A.view.id, phase: A.view.phase, h: +A.world.height(A.player.x, A.player.z, A.player.w).toFixed(2) })`);

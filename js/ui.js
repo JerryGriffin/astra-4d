@@ -446,6 +446,11 @@ function update(dt) {
   }
   // 模块交互提示
   if (!openName && !A.player.mount && !A.player.dead) {
+    const ruin = A.ruins && A.ruins.nearest(A.player.x, A.player.z, 4.6);
+    if (ruin) {
+      setInteract('F · 搜刮' + (ruin.entry.label || '残骸'));
+      return;
+    }
     const m = A.build.nearest(A.player.x, A.player.z, 5.0);
     if (m) {
       const label = m.type === 'rover' ? '登上漫游车' : m.type === 'shuttle' ? '打开星图' : m.def.name;

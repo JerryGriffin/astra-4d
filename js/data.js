@@ -57,7 +57,7 @@ const ITEMS = {
   helium:   { name: '氦气', en: 'Helium',   cat: 'gas', color: 0xf0c0d8, bytes: 160 },
   // —— 工具 / 特殊 ——
   soil:     { name: '土壤',   en: 'Soil',    cat: 'special', color: 0xa9805c, bytes: 0 },
-  scrap:    { name: '金属碎料', en: 'Scrap', cat: 'special', color: 0x9aa0a6, bytes: 0 },
+  scrap:    { name: '金属碎料', en: 'Scrap', cat: 'special', color: 0x9aa0a6, bytes: 45 },
   tether:   { name: '系绳桩', en: 'Tether',  cat: 'special', color: 0x9be8ff, bytes: 0 },
   beacon:   { name: '信标',   en: 'Beacon',  cat: 'special', color: 0xffd166, bytes: 0 },
   canister: { name: '罐',     en: 'Canister', cat: 'special', color: 0x8fe0b0, bytes: 0 }

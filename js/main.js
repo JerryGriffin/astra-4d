@@ -178,6 +178,9 @@ const keys = {};
 const input = { mx: 0, mz: 0, sprint: false, jump: false, action: false, wUp: false, wDown: false };
 A.input = input;
 let joyVec = { x: 0, y: 0 };
+// 触屏按钮的按住状态必须单独存：readKeys 每帧都会重算键盘，直接写 input 会被立刻覆盖
+const touch = { jump: false, wUp: false, wDown: false };
+A.touchInput = touch;
 
 function readKeys() {
   const kx = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
@@ -185,9 +188,9 @@ function readKeys() {
   input.mx = joyVec.x || kx;
   input.mz = joyVec.y || kz;
   input.sprint = !!(keys.ShiftLeft || keys.ShiftRight);
-  input.jump = !!keys.Space;
-  input.wUp = !!keys.KeyE;
-  input.wDown = !!keys.KeyQ;
+  input.jump = !!keys.Space || touch.jump;
+  input.wUp = !!keys.KeyE || touch.wUp;
+  input.wDown = !!keys.KeyQ || touch.wDown;
 }
 
 window.addEventListener('keydown', (e) => {
@@ -208,6 +211,21 @@ window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 
 function interact() {
+  // 遗址优先：站在残骸箱/数据核心旁边时 F 是搜刮
+  if (!A.player.mount) {
+    const ruin = A.ruins.nearest(A.player.x, A.player.z, 4.6);
+    if (ruin) {
+      const res = A.ruins.loot(ruin);
+      if (res) {
+        A.sfx.ok();
+        A.ui.toast(res.text);
+        A.burst(ruin.x, A.world.height(ruin.x, ruin.z, A.player.w) + 0.8, ruin.z,
+          new THREE.Color(0x8ef0d0), 22, 2.2);
+        writeSave(true);
+      }
+      return;
+    }
+  }
   if (A.player.mount) {
     if (A.player.mount.type === 'shuttle') { A.ui.openPanel('travel'); return; }
     A.player.dismount(); return;
@@ -313,9 +331,9 @@ function initTouch() {
     b.addEventListener('pointerleave', () => { b.classList.remove('on'); off && off(); });
   };
   holdBtn('btn-action', () => { input.action = true; }, () => { input.action = false; });
-  holdBtn('btn-jump', () => { input.jump = true; }, () => { input.jump = false; });
-  holdBtn('btn-wup', () => { input.wUp = true; }, () => { input.wUp = false; });
-  holdBtn('btn-wdown', () => { input.wDown = true; }, () => { input.wDown = false; });
+  holdBtn('btn-jump', () => { touch.jump = true; }, () => { touch.jump = false; });
+  holdBtn('btn-wup', () => { touch.wUp = true; }, () => { touch.wUp = false; });
+  holdBtn('btn-wdown', () => { touch.wDown = true; }, () => { touch.wDown = false; });
   $('btn-tether').addEventListener('click', () => A.player.placeTether());
   $('btn-interact').addEventListener('click', () => interact());
   $('btn-mode').addEventListener('click', () => {
@@ -326,7 +344,7 @@ function initTouch() {
 
 // 移动端：按住方向键一样的 w 滑移按钮
 function syncMobilePhase() {
-  if (!A.touch) return;
+  if (!A.touch && !A.mobile) return;
   const up = $('btn-wup'), dn = $('btn-wdown');
   if (up) up.classList.toggle('on', input.wUp);
   if (dn) dn.classList.toggle('on', input.wDown);
@@ -397,7 +415,7 @@ let save = { v: 2, seed: 1, pi: 0, dayTime: 0.18, view: 'xyz', player: null, pla
 A.save = save;
 
 function planetState(pid) {
-  if (!save.planets[pid]) save.planets[pid] = { edits: [], modules: [], tethers: [], x: 0, z: 0 };
+  if (!save.planets[pid]) save.planets[pid] = { edits: [], modules: [], tethers: [], ruins: [], x: 0, z: 0 };
   return save.planets[pid];
 }
 function capturePlanet() {
@@ -406,6 +424,7 @@ function capturePlanet() {
   st.edits = A.world.serializeEdits();
   st.modules = A.build.serialize();
   st.tethers = A.player.tethers.map((t) => ({ x: +t.x.toFixed(2), z: +t.z.toFixed(2), w: +t.w.toFixed(3) }));
+  st.ruins = A.ruins.serialize();
   st.x = +A.player.x.toFixed(2);
   st.z = +A.player.z.toFixed(2);
   save.player = A.player.serialize();
@@ -597,6 +616,7 @@ window.addEventListener('orientationchange', () => setTimeout(resize, 240));
 document.addEventListener('visibilitychange', () => { if (document.hidden && gameStarted) writeSave(true); });
 
 A.world.init(scene);
+A.ruins.init(scene);
 A.build.init(scene);
 A.player.init(scene);
 A.ui.init();

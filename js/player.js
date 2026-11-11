@@ -294,6 +294,7 @@ function updateTool(dt, input) {
   if (active) {
     if (player.toolMode === 'dig') {
       A.world.deform(tx, tz, player.w, radius, -rate * dt);
+      A.world.mineAt(tx, tz, player.w, radius, dt, popUnit);
       player.soil = Math.min(player.soilMax, player.soil + dt * 2.0);
       burst(tx, gy + 0.1, tz, new THREE.Color(0x9a7a58), 1, 1.2);
       if (Math.random() < 0.08) A.sfx.digit();
@@ -327,10 +328,17 @@ function updateTool(dt, input) {
 // ---------------- 采集 ----------------
 let harvestTarget = null, harvestProgress = 0;
 
+function popUnit(r) {
+  addItem(r.type, 1);
+  const p = r.mesh.position;
+  burst(p.x, p.y + 0.25, p.z, new THREE.Color(A.item(r.type).color), 12, 1.9);
+  A.sfx.harvest();
+}
+
 function bestNode() {
   let best = null, bestD = 3.8, fallback = null, fallbackD = 3.8;
   for (const r of A.world.nodes) {
-    if (r.harvested || !r.exposed) continue;
+    if (r.harvested || !r.exposed || r.units <= 0) continue;
     const d = Math.hypot(r.x - player.x, r.z - player.z);
     if (d >= 3.8) continue;
     if (Math.abs(player.w - r.wPos) < 0.55) {
@@ -356,19 +364,19 @@ function updateHarvest(dt, input, time) {
     harvestTarget = null; harvestProgress = 0;
     return;
   }
-  A.ui.setPrompt('按住 <b>采集</b> 拾取 · ' + A.item(near.type).name);
+  A.ui.setPrompt('按住 <b>采集</b> 拾取 · ' + A.item(near.type).name + ' ×' + near.units);
   if (input && input.action) {
     if (harvestTarget !== near) { harvestTarget = near; harvestProgress = 0; }
     const pos = near.mesh.position;
     setBeam(hand, _v2.copy(pos), true, new THREE.Color(A.item(near.type).color));
     harvestProgress += dt;
     if (Math.random() < 0.4) burst(pos.x, pos.y, pos.z, new THREE.Color(A.item(near.type).color), 1, 0.8);
-    if (harvestProgress >= 1.15) {
+    if (harvestProgress >= 0.85) {
+      near.units -= 1;
       addItem(near.type, 1);
-      near.harvested = true;
-      near.respawn = 30 + Math.random() * 40;
-      burst(pos.x, pos.y, pos.z, new THREE.Color(A.item(near.type).color), 26, 2.0);
+      burst(pos.x, pos.y, pos.z, new THREE.Color(A.item(near.type).color), 18, 2.0);
       A.sfx.harvest();
+      if (near.units <= 0) { near.harvested = true; near.respawn = 55 + Math.random() * 55; }
       harvestTarget = null; harvestProgress = 0;
     }
   } else {
@@ -451,7 +459,7 @@ function update(dt, input, time) {
     _move.set(0, 0, 0);
     const mx = input ? input.mx : 0, mz = input ? input.mz : 0;
     if (mz) _move.addScaledVector(_fwd, mz);
-    if (mx) _move.addScaledVector(_right, mx * -1);
+    if (mx) _move.addScaledVector(_right, mx);
     player.sprinting = !!(input && input.sprint);
     const speed = player.sprinting ? 8.6 : 5.2;
     player.moving = _move.lengthSq() > 0.0001;

@@ -364,58 +364,41 @@ const nodeGroup = new THREE.Group();
 const ECHO_GEO = new THREE.OctahedronGeometry(0.62, 0);
 const mats = {};
 
-function buildResourceMesh(type) {
+// ---------------- 矿脉：Astroneer 式沉积块 ----------------
+// 一坨同色圆润矿块半埋在地里，浅的露头、深的要挖开才看得见。
+const BLOB = new THREE.IcosahedronGeometry(1, 1);
+const SHARD = new THREE.OctahedronGeometry(1, 0);
+const NODE_DEPTH = { near: 0.38, deep: 0.62 };
+
+function buildDeposit(type, units) {
   const t = A.item(type);
-  const g = new THREE.Group();
   if (!mats[type]) {
     mats[type] = new THREE.MeshPhongMaterial({
-      color: t.color, flatShading: true, shininess: 30,
-      emissive: new THREE.Color(t.color).multiplyScalar(t.glow ? 0.55 : 0.06)
+      color: t.color, flatShading: true, shininess: t.glow ? 60 : 16,
+      emissive: new THREE.Color(t.color).multiplyScalar(t.glow ? 0.45 : 0.05)
     });
   }
   const mat = mats[type];
-  const shape = t.shape || 'icosa0';
-  let core;
-  if (shape === 'icosa') {
-    core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.46, 1), mat);
-    for (let i = 0; i < 5; i++) {
-      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.34, 5), mat);
-      const a = (i / 5) * Math.PI * 2;
-      spike.position.set(Math.cos(a) * 0.36, 0.22 + Math.sin(i * 2.3) * 0.16, Math.sin(a) * 0.36);
-      spike.rotation.set(Math.random() * 0.7, 0, Math.random() * 0.7);
-      g.add(spike);
-    }
-  } else if (shape === 'drop') {
-    core = new THREE.Mesh(new THREE.SphereGeometry(0.44, 10, 8), mat);
-    core.scale.set(1, 1.32, 1);
-    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.42, 8), mat);
-    tip.position.y = 0.62;
-    g.add(tip);
-  } else if (shape === 'prism') {
-    core = new THREE.Mesh(new THREE.OctahedronGeometry(0.5, 0), mat);
-    core.scale.set(0.8, 1.55, 0.8);
-    const side = new THREE.Mesh(new THREE.OctahedronGeometry(0.24, 0), mat);
-    side.position.set(0.34, -0.12, 0.18);
-    side.scale.y = 1.7;
-    g.add(side);
-    const side2 = side.clone();
-    side2.position.set(-0.3, -0.2, -0.22);
-    side2.scale.setScalar(0.8);
-    g.add(side2);
-    if (t.glow) {
-      const halo = new THREE.Mesh(new THREE.SphereGeometry(0.95, 12, 10),
-        new THREE.MeshBasicMaterial({ color: t.color, transparent: true, opacity: 0.14, depthWrite: false }));
-      g.add(halo);
-    }
-  } else if (shape === 'dodeca') {
-    core = new THREE.Mesh(new THREE.DodecahedronGeometry(0.48, 0), mat);
-    core.scale.set(1.1, 0.9, 1.05);
-  } else {
-    core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.46, 0), mat);
-    core.scale.set(1.15, 0.85, 1.1);
+  const g = new THREE.Group();
+  const n = 3 + units;
+  for (let i = 0; i < n; i++) {
+    const geo = t.shape === 'prism' ? SHARD : BLOB;
+    const m = new THREE.Mesh(geo, mat);
+    const a = Math.random() * Math.PI * 2, rad = Math.sqrt(Math.random()) * 0.58;
+    const s = 0.3 + Math.random() * 0.15;
+    m.position.set(Math.cos(a) * rad, -0.5 + Math.random() * 0.26, Math.sin(a) * rad);
+    m.scale.set(s * (0.95 + Math.random() * 0.4), s * (0.45 + Math.random() * 0.22), s * (0.95 + Math.random() * 0.4));
+    m.rotation.set(Math.random() * 1.4, Math.random() * 6.28, Math.random() * 1.4);
+    m.castShadow = !A.mobile;
+    m.receiveShadow = true;
+    g.add(m);
   }
-  core.castShadow = !A.mobile;
-  g.add(core);
+  if (t.glow) {
+    const halo = new THREE.Mesh(new THREE.SphereGeometry(0.95, 10, 8),
+      new THREE.MeshBasicMaterial({ color: t.color, transparent: true, opacity: 0.16, depthWrite: false }));
+    halo.position.y = 0.1;
+    g.add(halo);
+  }
   return g;
 }
 
@@ -425,19 +408,20 @@ function spawnNodes() {
   const P = state.planet;
   const table = Object.entries(P.res);
   const total = table.reduce((a, [, v]) => a + v, 0);
-  const rand = A.rng(state.seed ^ P.seed);
-  const count = A.mobile ? 110 : 150;
+  const rand = A.rng((state.seed ^ P.seed) + 0x2f1a);
+  const count = A.mobile ? 80 : 112;
   for (let i = 0; i < count; i++) {
     let r = rand() * total, key = table[0][0];
     for (const [k, v] of table) { r -= v; if (r <= 0) { key = k; break; } }
     const ang = rand() * Math.PI * 2;
-    const rad = 12 + Math.sqrt(rand()) * 210;
+    const rad = 11 + Math.sqrt(rand()) * 212;
     const x = Math.cos(ang) * rad, z = Math.sin(ang) * rad;
     const wPos = (rand() - 0.5) * 11.5;
-    // 30% 的矿埋在土里，得挖出来
-    const depth = rand() < 0.32 ? 1.2 + rand() * 2.6 : 0;
-    const ay = height(x, z, wPos) - depth;
-    const mesh = buildResourceMesh(key);
+    const units = 2 + Math.floor(rand() * 4);
+    const deep = rand() < NODE_DEPTH.deep;
+    const depth = deep ? 1.0 + rand() * 3.1 : -0.45 + rand() * 0.35;
+    const top = height(x, z, wPos) - depth;
+    const mesh = buildDeposit(key, units);
     const echoMat = new THREE.MeshBasicMaterial({
       color: A.item(key).color, transparent: true, opacity: 0.16, depthWrite: false, wireframe: true
     });
@@ -445,61 +429,82 @@ function spawnNodes() {
     const echoB = new THREE.Mesh(ECHO_GEO, echoMat.clone());
     nodeGroup.add(mesh, echoA, echoB);
     nodes.push({
-      type: key, x, z, wPos, ay, depth, mesh, echoA, echoB,
-      bobPhase: rand() * Math.PI * 2, respawn: 0, harvested: false,
-      lastW: NaN, baseY: 0, echoW: NaN, echoYA: 0, echoYB: 0, exposed: false
+      type: key, x, z, wPos, ay: top, depth, units, mesh, echoA, echoB,
+      phase: rand() * Math.PI * 2, respawn: 0, harvested: false, mineT: 0,
+      lastW: NaN, baseY: 0, echoW: NaN, echoYA: 0, echoYB: 0, exposed: depth < 0.2, vis: 1
     });
   }
 }
 
 function resourceWindow(dw) { return 1 - M.smoothstep(dw, 0.55, 1.55); }
 
+
+function resourceWindow(dw) { return 1 - M.smoothstep(dw, 0.55, 1.55); }
+
 function updateNodes(w, time, dt, px, pz) {
   for (const r of nodes) {
-    const adw = Math.abs(w - r.wPos);
-    const vis = resourceWindow(adw);
     if (r.harvested) {
       r.respawn -= dt;
+      r.mesh.visible = false; r.echoA.visible = false; r.echoB.visible = false;
       if (r.respawn <= 0) {
         r.harvested = false;
+        r.units = 2 + Math.floor(Math.random() * 4);
         r.wPos = (Math.random() - 0.5) * 11.5;
+        r.depth = Math.random() < NODE_DEPTH.deep ? 1.0 + Math.random() * 3.1 : -0.45 + Math.random() * 0.35;
         r.ay = height(r.x, r.z, r.wPos) - r.depth;
-        r.echoW = NaN;
+        r.echoW = NaN; r.lastW = NaN; r.mineT = 0;
       }
-      r.mesh.visible = false; r.echoA.visible = false; r.echoB.visible = false;
       continue;
     }
+    const adw = Math.abs(w - r.wPos);
+    const vis = resourceWindow(adw);
     if (!(Math.abs(w - r.lastW) < 0.05)) {
       r.baseY = height(r.x, r.z, w);
       r.lastW = w;
     }
-    // 埋在土里的矿，只有把上面的土挖掉才看得见
-    const buried = r.baseY > r.ay + 0.45;
-    r.exposed = !buried;
-    const y = r.ay + 0.55 + Math.sin(time * 1.4 + r.bobPhase) * 0.07;
+    // 露头：沉积块的顶已经高过地表，能看见、也能采
+    r.exposed = r.baseY < r.ay + 0.45;
+    const deeplyBuried = r.baseY > r.ay + 0.95;
     const dist = Math.hypot(r.x - px, r.z - pz);
     const near = 1 - M.smoothstep(dist, 110, 170);
-    r.mesh.position.set(r.x, y, r.z);
-    const s = (0.22 + 0.78 * vis) * (0.05 + 0.95 * near) * (buried ? 0.6 : 1);
-    r.mesh.scale.setScalar(s);
-    r.mesh.rotation.y = time * 0.22 + r.bobPhase;
-    r.mesh.visible = s > 0.05 && !buried;
+    // 相位不对就沉回土里；深浅靠地形自然遮挡
+    const sink = (1 - vis) * 1.9;
+    r.mesh.position.set(r.x, r.ay - sink, r.z);
+    r.mesh.rotation.y = r.phase;
+    r.mesh.scale.setScalar((0.55 + 0.45 * vis) * (0.12 + 0.88 * near));
+    r.mesh.visible = vis > 0.02 && near > 0.02 && !deeplyBuried;
 
-    const echoAlpha = (1 - M.smoothstep(adw, 2.2, 4.6)) * 0.22 * near * (buried ? 0.3 : 1);
+    const echoAlpha = (1 - M.smoothstep(adw, 2.2, 4.6)) * 0.2 * near * (deeplyBuried ? 0.4 : 1);
     r.echoA.visible = echoAlpha > 0.01;
     r.echoB.visible = echoAlpha > 0.01;
     if (r.echoA.visible) {
       if (r.echoW !== r.wPos) {
-        r.echoYA = height(r.x, r.z, r.wPos + 0.95) + 0.55;
-        r.echoYB = height(r.x, r.z, r.wPos - 0.95) + 0.55;
+        r.echoYA = height(r.x, r.z, r.wPos + 0.95) + 0.5;
+        r.echoYB = height(r.x, r.z, r.wPos - 0.95) + 0.5;
         r.echoW = r.wPos;
       }
       r.echoA.position.set(r.x, r.echoYA, r.z);
-      r.echoA.rotation.y = time * 0.22 + r.bobPhase;
+      r.echoA.rotation.y = time * 0.22 + r.phase;
       r.echoA.material.opacity = echoAlpha;
       r.echoB.position.set(r.x, r.echoYB, r.z);
-      r.echoB.rotation.y = time * 0.22 + r.bobPhase;
+      r.echoB.rotation.y = time * 0.22 + r.phase;
       r.echoB.material.opacity = echoAlpha * 0.7;
+    }
+  }
+}
+
+// 用地形工具挖到露头矿脉：每 0.26 秒崩一块进背包（Astroneer 的挖矿手感）
+function mineAt(x, z, w, radius, dt, onUnit) {
+  for (const r of nodes) {
+    if (r.harvested || !r.exposed) continue;
+    if (Math.abs(w - r.wPos) > 0.55) continue;
+    if (Math.hypot(r.x - x, r.z - z) > radius + 0.9) continue;
+    r.mineT += dt;
+    if (r.mineT >= 0.26) {
+      r.mineT = 0;
+      r.units -= 1;
+      if (onUnit) onUnit(r);
+      if (r.units <= 0) { r.harvested = true; r.respawn = 55 + Math.random() * 55; }
     }
   }
 }
@@ -563,6 +568,7 @@ function setPlanet(pi, seed, editsArr) {
   buildDecor();
   spawnNodes();
   spawnSamples();
+  if (A.ruins) A.ruins.spawn();
 }
 
 function serializeEdits() { return Array.from(state.edits.entries()); }
@@ -581,11 +587,12 @@ function rebuild() {
   for (const sp of samples) {
     sp.ay = height(sp.x, sp.z, sp.wPos) + 0.9;
   }
+  if (A.ruins) A.ruins.reanchor(A.player ? A.player.w : 0);
 }
 
 A.world = {
   state, height, baseHeight, editAt, deform, setPlanet, serializeEdits, rebuild, nodes, samples,
-  resourceWindow, updateDecor, updateNodes, updateSamples,
+  resourceWindow, updateDecor, updateNodes, mineAt, updateSamples,
   get planet() { return state.planet; },
   get storm() { return state.storm; },
   init(s) {
