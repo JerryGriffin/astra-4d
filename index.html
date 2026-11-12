@@ -4,13 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#5f9fd8">
-<meta name="description" content="ASTRA·4D — 在 x y z 之外还有 w 的四维异星开拓游戏，致敬 ASTRONEER。">
+<meta name="description" content="ASTRA·4D — 一个真实的四维标量场，沿 W 世界线平滑穿过七颗异星。">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <title>ASTRA·4D — 四维远征</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%23e8853c%27/%3E%3Ccircle cx=%2716%27 cy=%2714%27 r=%277%27 fill=%27%23f6dfb0%27/%3E%3Cpath d=%27M8 24c3-4 13-4 16 0z%27 fill=%27%237fb291%27/%3E%3C/svg%3E">
-<link rel="stylesheet" href="fonts/fonts.css?v=1.0.0">
-<link rel="stylesheet" href="style.css?v=1.0.0">
+<link rel="stylesheet" href="fonts/fonts.css?v=1.1.0">
+<link rel="stylesheet" href="style.css?v=1.1.0">
 </head>
 <body>
 <canvas id="scene"></canvas>
@@ -19,7 +19,7 @@
 <div id="hud" class="hidden">
 
   <div class="hud-tl">
-    <div id="planet-chip" class="planet-chip"><b>希尔瓦</b><span>SYLVA</span><i>类地行星</i></div>
+    <div id="planet-chip" class="planet-chip"><b>希尔瓦</b><span>SYLVA</span><i>类地行星</i><em>w 0.00</em></div>
     <div class="vitals">
       <div class="vital">
         <svg viewBox="0 0 24 24" class="vic"><path d="M12 3c2.5 3.2 6.2 6.4 6.2 10.2A6.2 6.2 0 0 1 12 19.4a6.2 6.2 0 0 1-6.2-6.2C5.8 9.4 9.5 6.2 12 3z"/></svg>
@@ -39,15 +39,21 @@
       <div class="bytes-line">字节 <b id="bytes-num">0</b></div>
       <div id="rad-chip" class="rad-chip hidden"></div>
     </div>
+    <div class="rings-box">
+      <canvas id="viz-rings" width="96" height="96"></canvas>
+      <span>生命维持</span>
+    </div>
   </div>
 
   <div class="hud-tr">
-    <button id="view-btn" class="nav-btn view-btn" title="转换空间视图（G）">
-      <span class="vb-full">转换空间视图</span><span class="vb-axis view-axis">XYZ</span>
+    <button id="view-btn" class="nav-btn view-btn" title="四维场 F(X,Y,Z,W)（G）">
+      <span class="vb-full">四维场</span><span class="vb-axis view-axis">F(X,Y,Z,W)</span>
     </button>
     <button class="nav-btn" data-panel="backpack">背包<span class="kb">B</span></button>
     <button class="nav-btn" data-panel="build">建造<span class="kb">C</span></button>
     <button class="nav-btn" data-panel="research">研究<span class="kb">V</span></button>
+    <button class="nav-btn" data-panel="travel">星图<span class="kb">1–7</span></button>
+    <button class="nav-btn" data-panel="goals">里程碑<span class="kb">K</span></button>
     <button class="nav-btn" data-panel="codex">图鉴<span class="kb">J</span></button>
     <button class="nav-btn" data-panel="net">联机<span class="kb">M</span></button>
     <button class="nav-btn round" data-panel="help">?</button>
@@ -64,19 +70,37 @@
       <button data-mode="fill"><i></i>填土</button>
       <span class="kb-sep">R</span>
     </div>
-    <div class="phase">
-      <div class="phase-h"><span id="phase-label">相位轴 W</span><i id="view-tag" class="view-tag">X Y Z</i><b id="w-readout">+0.00</b></div>
-      <div class="phase-track">
-        <div class="phase-ticks"></div>
-        <div id="phase-fill" class="phase-cursor"></div>
+    <div class="worldline" id="worldline">
+      <div class="wl-head"><span>世界线 W · 七颗行星</span><i id="wl-info">希尔瓦 · 稳定</i><b id="w-readout">0.00</b></div>
+      <div class="wl-track" id="wl-track">
+        <div class="wl-rail"></div>
+        <div class="wl-planets" id="wl-planets"></div>
+        <div class="wl-cursor" id="wl-cursor"></div>
       </div>
-      <div class="phase-f"><span>Q 减相</span><span>连续滑移 · 世界随之呼吸</span><span>E 增相</span></div>
+      <div class="wl-foot"><span>Q 减</span><span>拖动轨道 / 点星球 / 数字键 1–7</span><span>E 增</span></div>
     </div>
   </div>
 
   <div class="hud-br">
+    <div class="viz-panel">
+      <div class="viz-map-wrap">
+        <canvas id="viz-map" width="132" height="132"></canvas>
+        <span id="map-caption" class="viz-cap"></span>
+      </div>
+      <div class="viz-side">
+        <canvas id="viz-profile" width="200" height="58"></canvas>
+        <span id="profile-caption" class="viz-cap"></span>
+        <div class="env-bars">
+          <div class="env-row" id="env-sun"><span>日照</span><div class="env-bar"><i></i></div><b>0.8</b></div>
+          <div class="env-row" id="env-wind"><span>风力</span><div class="env-bar"><i></i></div><b>0.6</b></div>
+          <div class="env-row" id="env-grav"><span>重力</span><div class="env-bar"><i></i></div><b>1.0</b></div>
+          <div class="env-row" id="env-rad"><span>辐射</span><div class="env-bar"><i></i></div><b>0%</b></div>
+        </div>
+        <button id="btn-scan" class="scan-btn">◎ 相位扫描 <em>X</em></button>
+      </div>
+    </div>
     <div class="quick">
-      <span><b>T</b> 系绳</span><span><b>F</b> 交互</span><span><b>WASD</b> 移动</span><span><b>空格</b> 跳</span>
+      <span><b>T</b> 系绳</span><span><b>F</b> 交互</span><span><b>WASD</b> 移动</span><span><b>空格</b> 跳</span><span><b>G</b> 四维场</span>
     </div>
   </div>
 
@@ -91,7 +115,7 @@
       <button id="btn-action" class="mbtn big">行动</button>
     </div>
     <div class="m-phase">
-      <button id="btn-view" class="mbtn wide view-btn-m">XYZ</button>
+      <button id="btn-view" class="mbtn wide view-btn-m">4D</button>
       <button id="btn-wup" class="mbtn wide">W +</button>
       <button id="btn-wdown" class="mbtn wide">W −</button>
     </div>
@@ -101,84 +125,83 @@
 <!-- ============ 面板 ============ -->
 <div id="panels" class="panels">
   <section class="panel" id="panel-backpack">
-    <header>
-      <div><h2>背包</h2><p>EXO DYNAMICS · 随身补给</p></div>
-      <button class="close" data-close>×</button>
-    </header>
+    <header><div><h2>背包</h2><p>EXO DYNAMICS · 随身补给</p></div><button class="close" data-close>×</button></header>
     <div class="panel-body cols">
-      <section class="col">
-        <h3>样本与材料</h3>
-        <div id="backpack-grid" class="inv-grid"></div>
-      </section>
-      <section class="col">
-        <h3>背包打印机 <em>随身 · 不耗电</em></h3>
-        <div id="printer-list" class="cards"></div>
-      </section>
+      <section class="col"><h3>样本与材料</h3><div id="backpack-grid" class="inv-grid"></div></section>
+      <section class="col"><h3>背包打印机 <em>随身 · 不耗电</em></h3><div id="printer-list" class="cards"></div></section>
     </div>
     <footer><span>字节 <b class="bytes-big">0</b></span><span>土壤 <b class="stat-soil">0/12</b></span><span class="tip">氧气由系绳桩与制氧机补给</span></footer>
   </section>
 
   <section class="panel" id="panel-build">
-    <header>
-      <div><h2>建造</h2><p>打印模块 · 选一个再点地面放置</p></div>
-      <button class="close" data-close>×</button>
-    </header>
+    <header><div><h2>建造</h2><p>打印模块 · 选一个再点地面放置</p></div><button class="close" data-close>×</button></header>
     <div class="panel-body"><div id="build-list"></div></div>
     <footer><span class="tip">模块之间 13 米内自动接线成电网 · 制氧机给全网供氧</span></footer>
   </section>
 
   <section class="panel" id="panel-research">
-    <header>
-      <div><h2>研究</h2><p>样本 → 字节 → 蓝图</p></div>
-      <button class="close" data-close>×</button>
-    </header>
+    <header><div><h2>研究</h2><p>样本 → 字节 → 蓝图</p></div><button class="close" data-close>×</button></header>
     <div class="panel-body cols">
-      <section class="col">
-        <h3>研究舱样本 <em>需站在研究舱旁</em></h3>
-        <div id="research-items" class="rows"></div>
-      </section>
-      <section class="col">
-        <h3>蓝图目录</h3>
-        <div id="research-blueprints" class="bps"></div>
-      </section>
+      <section class="col"><h3>研究舱样本 <em>需站在研究舱旁</em></h3><div id="research-items" class="rows"></div></section>
+      <section class="col"><h3>蓝图目录</h3><div id="research-blueprints" class="bps"></div></section>
     </div>
-    <footer><span>可用字节 <b class="bytes-big">0</b></span></footer>
+    <footer><span>可用字节 <b id="bytes-big" class="bytes-big">0</b></span></footer>
   </section>
 
   <section class="panel" id="panel-module">
-    <header>
-      <div><h2 id="module-title">模块</h2><p id="module-sub"></p></div>
-      <button class="close" data-close>×</button>
-    </header>
+    <header><div><h2 id="module-title">模块</h2><p id="module-sub"></p></div><button class="close" data-close>×</button></header>
     <div class="panel-body" id="module-body"></div>
   </section>
 
   <section class="panel" id="panel-travel">
-    <header>
-      <div><h2>星图</h2><p>穿梭机航线 · 七颗行星</p></div>
-      <button class="close" data-close>×</button>
-    </header>
+    <header><div><h2>星图</h2><p>世界线 W 的七个锚点 · 平滑滑移，不再瞬移</p></div><button class="close" data-close>×</button></header>
     <div class="panel-body"><div id="travel-list" class="planets"></div></div>
-    <footer><span class="tip">每次降落都会保留该行星的基地、系绳与你挖过的地形</span></footer>
+    <footer><span class="tip">七颗行星共用一个连续四维世界 · 基地、地形编辑与系绳全程保留</span></footer>
   </section>
 
   <section class="panel" id="panel-codex">
-    <header>
-      <div><h2>图鉴</h2><p>生产链查询 · 每样资源从哪来、到哪去</p></div>
-      <button class="close" data-close>×</button>
-    </header>
+    <header><div><h2>图鉴</h2><p>生产链查询 · 每样资源从哪来、到哪去</p></div><button class="close" data-close>×</button></header>
     <div class="panel-body">
       <input id="codex-q" class="net-input codex-q" placeholder="搜索物品名，例如 铁矿 / 电路板 / 星辉" autocomplete="off">
       <div id="codex-list" class="codex-list"></div>
     </div>
-    <footer><span class="tip">来源与用途由配方表自动生成 · 深层相位矿只在 |w|&gt;4.5 出现</span></footer>
+    <footer><span class="tip">来源与用途由配方表自动生成 · 深层矿带只出现在 w &gt; 4.7 的世界线末段</span></footer>
+  </section>
+
+  <section class="panel wide" id="panel-field">
+    <header><div><h2>四维场</h2><p>F(X, Y, Z, W) 的真实密度切片 · 地表是 F=0 的等值面</p></div><button class="close" data-close>×</button></header>
+    <div class="panel-body field-body">
+      <div class="field-left">
+        <div class="field-modes">
+          <button data-field-mode="XZ" class="on">XZ 平面</button>
+          <button data-field-mode="YW">YW 平面</button>
+          <button data-field-mode="ZW">ZW 平面</button>
+        </div>
+        <canvas id="field-canvas" width="360" height="300"></canvas>
+        <div id="field-axis" class="field-axis"></div>
+        <label class="field-slider">调整 W <input id="field-w" type="range" min="0" max="6" step="0.01" value="0"><b>世界线</b></label>
+      </div>
+      <div class="field-right">
+        <h3>实时演算探针</h3>
+        <div id="field-probe" class="field-probe"></div>
+        <p class="field-note">
+          地形不是贴图：整个宇宙是一个固定的四维标量场，四个分量全部进入噪声。
+          在给定 (X, Z, W) 上沿 Y 求 <b>F = 0</b> 的根，得到的就是脚下这张曲面。
+          切换上方投影只改变观察哪两个轴，<b>不会重新排列坐标、也不会重建世界</b>；
+          白色细线是等值面，残差应接近 0。
+        </p>
+        <p class="field-note dim">拖动 W 滑块会真实移动你在世界线上的位置：天空、重力、矿脉与地形连续过渡。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel wide" id="panel-goals">
+    <header><div><h2>里程碑</h2><p>沿第四维远征 · 达成即奖励字节</p></div><button class="close" data-close>×</button></header>
+    <div class="panel-body"><div id="goals-list"></div></div>
   </section>
 
   <section class="panel" id="panel-net">
-    <header>
-      <div><h2>联机</h2><p>合作远征 · HTTP 轮询房间（无 WebSocket）</p></div>
-      <button class="close" data-close>×</button>
-    </header>
+    <header><div><h2>联机</h2><p>合作远征 · HTTP 轮询房间（无 WebSocket）</p></div><button class="close" data-close>×</button></header>
     <div class="panel-body cols">
       <section class="col">
         <h3>房间</h3>
@@ -191,7 +214,7 @@
           <button id="net-join" class="btn-ghost">加入房间</button>
           <button id="net-leave" class="btn-ghost">离开</button>
         </div>
-        <div class="net-hint">本地联机：<code>node coop-server.mjs</code>，然后所有人访问同一个地址。世界与基地各自本地保存，联机只共享位置、行星、视图与聊天。</div>
+        <div class="net-hint">本地联机：<code>node coop-server.mjs</code>，然后所有人访问同一个地址。世界与基地各自本地保存，联机只共享位置、世界线坐标与聊天。</div>
         <h3>队友</h3>
         <div id="net-peers" class="net-peers"></div>
       </section>
@@ -207,23 +230,19 @@
   </section>
 
   <section class="panel" id="panel-help">
-    <header>
-      <div><h2>操作与机制</h2><p>ASTRA·4D 速查</p></div>
-      <button class="close" data-close>×</button>
-    </header>
+    <header><div><h2>操作与机制</h2><p>ASTRA·4D 速查</p></div><button class="close" data-close>×</button></header>
     <div class="panel-body help">
       <div class="help-grid">
-        <div><h3>移动</h3><p><b>WASD</b> 移动 · <b>Shift</b> 疾跑 · <b>空格</b> 跳跃 · 拖拽转视角 · 滚轮/双指缩放</p></div>
-        <div><h3>四维</h3><p><b>Q / E</b> 沿相位轴 w 连续滑移（±6.5）。地形、矿脉、系绳都是 w 的连续函数。矿只在相位对齐时能采。</p></div>
+        <div><h3>移动</h3><p><b>WASD</b> 移动 · <b>Shift</b> 疾跑 · <b>空格</b> 跳跃 · 拖拽转视角 · 滚轮/双指缩放。陡坡会减速，爬山要绕缓坡。</p></div>
+        <div><h3>世界线 W</h3><p><b>Q / E</b> 沿 w 连续滑移（0~6），或拖动左下角<b>世界线轨道</b>、点击星球、按 <b>1–7</b> 设定航线。七颗行星的数值与颜色连续插值，滑移时真实经过中间每一颗，不再瞬移。</p></div>
+        <div><h3>真实四维</h3><p><b>G</b> 打开四维场面板。世界是一个固定的 4D 场 F(X,Y,Z,W)，四个分量都参与演算；地表是沿 Y 求 <b>F=0</b> 的等值面。面板里可切换 XZ / YW / ZW 投影、拖动 W、查看实时残差与四维坐标。</p></div>
+        <div><h3>地形</h3><p>山脊、峡谷、台地、沙丘与真实径向陨石坑都来自同一个场；陡坡露岩、高处亮色、洼地压暗。右下角有等高线小地图与沿视线的地形剖面。</p></div>
         <div><h3>地形工具</h3><p>按住 <b>左键</b> 挖/填，<b>R</b> 切换模式。挖出的土进土壤罐；<b>T</b> 放系绳桩延伸氧气网络。</p></div>
         <div><h3>基地</h3><p><b>F</b> 与模块交互。太阳能/风力/电池/发电机构成电网；研究舱把样本变成字节；熔炉→精炼，化学实验室→复合材料。</p></div>
-        <div><h3>空间视图</h3><p><b>G</b> 或右上角「转换空间视图」在 <b>XYZ / XYW / YZW / XZW</b> 之间切换：同一片四维场换一个三维切片去看，相位轴自动变成被切掉的那一根（XYZ→W，XYW→Z，YZW→X，XZW→Y）。</p></div>
-        <div><h3>载具</h3><p>打印漫游车跑远路，打印穿梭机换行星。载具停在基地的电网里会自动充电。</p></div>
-        <div><h3>生存</h3><p>离开氧气网络会持续掉氧，归零后开始掉血。死亡回到最近的系绳桩。风暴里躲进庇护所能挡沙。</p></div>
-        <div><h3>深层相位</h3><p>相位滑到 <b>|w| &gt; 4.5</b> 是深层相位带：星辉矿/榍石/锂只在这里出现，但会受<b>相位辐射</b>（氧气 ×2、每秒掉血）。造一件<b>相位防护服</b>（进阶电路板 + 硬质合金 + 石墨烯）就能免疫。</p></div>
-        <div><h3>电压与处理链</h3><p>机器分 <b>LV / MV / HV</b>，电网电压看最高档电源；LV 电网带不动 MV 机器（降到 25% 速度）。破碎机（2 矿→3 碎矿）→ 洗矿机（3 碎矿→4 纯净矿）→ 熔炉，全链每矿出 2 份金属；工业级机器产出更高。</p></div>
-        <div><h3>图鉴</h3><p><b>J</b> 打开图鉴：每样资源的来源与用途都由配方表自动生成，搜索框直接查「电路板」「星辉」之类。</p></div>
-        <div><h3>联机</h3><p><b>M</b> 打开联机面板。本地跑 <b>node coop-server.mjs</b>（默认 8787）后所有人访问同一地址，房主建房拿 4 位房号，队友填写加入。联机共享位置、行星、视图与聊天，世界与基地各自本地保存。</p></div>
+        <div><h3>新玩法</h3><p>两颗行星之间的过渡带会长出<b>相位结晶</b>（研究舱 900 字节）；<b>X</b> 相位扫描 9 秒标出附近矿脉；<b>K</b> 里程碑面板记录七行星、登顶、贯穿世界线等目标。</p></div>
+        <div><h3>生存</h3><p>离开氧气网络会持续掉氧，归零后开始掉血。世界线末段（w &gt; 4.7）有辐射带，穿一件<b>相位防护服</b>可免疫。风暴里躲进庇护所能挡沙。</p></div>
+        <div><h3>电压与处理链</h3><p>机器分 <b>LV / MV / HV</b>；破碎机（2 矿→3 碎矿）→ 洗矿机（3 碎矿→4 纯净矿）→ 熔炉，全链每矿出 2 份金属。</p></div>
+        <div><h3>图鉴与联机</h3><p><b>J</b> 图鉴查生产链；<b>M</b> 联机（本地跑 <code>node coop-server.mjs</code>），共享位置、世界线坐标与聊天。</p></div>
       </div>
     </div>
   </section>
@@ -234,18 +253,18 @@
   <div class="title-grain"></div>
   <div class="title-inner">
     <h1 class="title-name">ASTRA<span>·</span>4D</h1>
-    <p class="title-sub">四维里的一次远征：挖开异星地表，把矿脉、平台与系绳接成网络。<br>
-      按住 <b>Q / E</b> 滑移相位轴，整颗行星会像呼吸一样变形；<br>
-      <b>G</b> 转换空间视图，在 <em>xyz</em> / <em>xyw</em> / <em>yzw</em> / <em>xzw</em> 之间换一个三维切片看它。</p>
+    <p class="title-sub">一个真实的四维标量场：地表是 F(X,Y,Z,W)=0 的等值面，山脊、峡谷与陨石坑都由它演算出来。<br>
+      沿 <b>W 世界线</b>平滑穿过七颗行星，天空、重力与矿脉连续变形；<br>
+      <b>Q / E</b> 滑移 · <b>G</b> 查看四维场 · <b>X</b> 相位扫描 · <b>K</b> 里程碑。</p>
     <div class="title-actions">
       <button id="start-btn" class="start-btn">新的远征</button>
       <button id="continue-btn" class="start-btn ghost hidden">继续存档</button>
     </div>
     <div class="title-controls">
-      <span>WASD 移动</span><i></i><span>左键 地形工具</span><i></i><span>Q/E 相位</span><i></i><span>G 视图</span><i></i><span>F 交互</span><i></i><span>J 图鉴</span><i></i><span>M 联机</span>
+      <span>WASD 移动</span><i></i><span>左键 地形工具</span><i></i><span>Q/E 世界线</span><i></i><span>1–7 航线</span><i></i><span>G 四维场</span><i></i><span>F 交互</span><i></i><span>K 里程碑</span>
     </div>
   </div>
-  <div class="title-foot">零构建 · 低多边形 · 粉彩星野 · 致敬 ASTRONEER</div>
+  <div class="title-foot">零构建 · 真实 4D 等值面 · 七行星连续世界线 · 致敬 ASTRONEER</div>
 </div>
 
 <div id="death" class="death hidden">
@@ -258,15 +277,18 @@
 
 <div id="fx-fade" class="fx-fade"></div>
 
-<script src="vendor/three.min.js?v=1.0.0"></script>
-<script src="js/lib.js?v=1.0.0"></script>
-<script src="js/data.js?v=1.0.0"></script>
-<script src="js/world.js?v=1.0.0"></script>
-<script src="js/ruins.js?v=1.0.0"></script>
-<script src="js/build.js?v=1.0.0"></script>
-<script src="js/player.js?v=1.0.0"></script>
-<script src="js/ui.js?v=1.0.0"></script>
-<script src="js/net.js?v=1.0.0"></script>
-<script src="js/main.js?v=1.0.0"></script>
+<script src="vendor/three.min.js?v=1.1.0"></script>
+<script src="js/lib.js?v=1.1.0"></script>
+<script src="js/data.js?v=1.1.0"></script>
+<script src="js/field4.js?v=1.1.0"></script>
+<script src="js/world.js?v=1.1.0"></script>
+<script src="js/ruins.js?v=1.1.0"></script>
+<script src="js/build.js?v=1.1.0"></script>
+<script src="js/player.js?v=1.1.0"></script>
+<script src="js/ui.js?v=1.1.0"></script>
+<script src="js/viz.js?v=1.1.0"></script>
+<script src="js/goals.js?v=1.1.0"></script>
+<script src="js/net.js?v=1.1.0"></script>
+<script src="js/main.js?v=1.1.0"></script>
 </body>
 </html>

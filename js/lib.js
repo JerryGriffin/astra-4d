@@ -172,42 +172,15 @@ A.PLANETS = [
 
 A.planetById = (id) => A.PLANETS.find((p) => p.id === id) || A.PLANETS[0];
 
-// ---------------- 空间视图：同一片四维场，切不同的三维 ----------
-// 视图 "abc" 的含义：a = 地面横向，b = 高度方向，c = 地面纵向，缺的那个是相位轴。
-// xyz 就是原始视角（高度 y，相位 w）；换成 xyw 时地面变成 (x,w) 平面，相位轴变成 z。
-A.AXI = { x: 0, y: 1, z: 2, w: 3 };
-A.VIEW_IDS = ['xyz', 'xyw', 'yzw', 'xzw'];
-
-A.parseView = function (id) {
-  const s = String(id || 'xyz').toLowerCase();
-  if (!/^[xyzw]{3}$/.test(s)) return A.parseView('xyz');
-  const set = new Set(s.split(''));
-  let phase = 'w';
-  for (const k of ['w', 'z', 'y', 'x']) if (!set.has(k)) { phase = k; break; }
-  return { id: s, a: s[0], b: s[1], c: s[2], phase: phase };
-};
-
-A.view = A.parseView('xyz');
-
-// 按当前视图把「地面两轴 + 相位」摆进四维噪声的四个槽位；b 槽放常数 k
-const _s4 = [0, 0, 0, 0];
-A.slice4 = function (u, v, p, k) {
-  const vw = A.view, ix = A.AXI;
-  _s4[0] = _s4[1] = _s4[2] = _s4[3] = 0;
-  _s4[ix[vw.a]] = u;
-  _s4[ix[vw.b]] = k;
-  _s4[ix[vw.c]] = v;
-  _s4[ix[vw.phase]] = p;
-  return _s4;
-};
-A.noiseS = function (u, v, p, k) {
-  const s = A.slice4(u, v, p, k);
-  return A.noise4(s[0], s[1], s[2], s[3]);
-};
-A.fbmS = function (u, v, p, k, oct) {
-  const s = A.slice4(u, v, p, k);
-  return A.fbm4(s[0], s[1], s[2], s[3], oct);
-};
+// ---------------- 空间视图（v1.1.0 起：不再有「假切片」） ----------------
+// 旧版 parseView / slice4 / noiseS / fbmS 把高度槽塞成常数、再按视图重排四个
+// 噪声槽位：那不是四维演算，只是给同一张 2D 高度图换了个标签，切换后地形、
+// 矿脉、重力全都要重新锚一遍。v1.1.0 已移除。
+// 现在只有一个固定的 4D 场 F(X,Y,Z,W)（见 field4.js），地表是 F=0 的等值面；
+// 「视图」降级为四维场面板里的可视化投影，不再改变世界坐标。
+// A.view 保留固定值，仅为联机协议（net.js 的 v 字段）与旧存档兼容。
+A.view = { id: 'xyz', a: 'x', b: 'y', c: 'z', phase: 'w' };
+A.VIEW_IDS = ['xyz'];
 
 // ---------------- 设备判定 ----------------
 A.mobile = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
@@ -248,5 +221,25 @@ A.sfx = (function () {
     get muted() { return muted; }
   };
 })();
+
+// ---------------- 共享几何：圆角盒（低多边形玩具感） ----------------
+// 放在 lib 里：player / build / ruins / world 都要用，且与加载顺序无关
+A.roundedBox = function (w, h, d, round) {
+  const g = new THREE.BoxGeometry(w, h, d, 3, 3, 3);
+  const p = g.attributes.position;
+  const v = new THREE.Vector3(), c = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    c.set(
+      clamp(v.x, -w / 2 + round, w / 2 - round),
+      clamp(v.y, -h / 2 + round, h / 2 - round),
+      clamp(v.z, -d / 2 + round, d / 2 - round)
+    );
+    v.sub(c).normalize().multiplyScalar(round).add(c);
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals();
+  return g;
+};
 
 })(window.A);

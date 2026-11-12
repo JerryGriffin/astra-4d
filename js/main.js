@@ -117,24 +117,29 @@ let stormPoints, stormPos;
 }
 
 // ---------------- 环境（昼夜 / 风） ----------------
-A.env = { sun: 0.8, wind: 0.6, day: 0, storm: 0 };
+A.env = { sun: 0.8, wind: 0.6, day: 0, storm: 0, grav: 1, radiation: 0 };
 let dayTime = 0.18;
-const PAL_CACHE = {};
+const PAL_CACHE = {
+  top: new THREE.Color(), hor: new THREE.Color(), sun: new THREE.Color(), fog: new THREE.Color()
+};
+const _top = new THREE.Color(), _hor = new THREE.Color(), _fog = new THREE.Color();
+
+/** v1.1.0：行星外观每帧从世界线插值结果刷新 → 七颗行星之间连续过渡 */
 function applyPlanetLook() {
-  const P = A.world.planet;
-  PAL_CACHE.top = new THREE.Color(P.pal.skyTop);
-  PAL_CACHE.hor = new THREE.Color(P.pal.skyHor);
-  PAL_CACHE.sun = new THREE.Color(P.pal.sun);
-  PAL_CACHE.fog = new THREE.Color(P.pal.fog);
+  const P = A.F4.cur;
+  PAL_CACHE.top.setHex(P.pal.skyTop);
+  PAL_CACHE.hor.setHex(P.pal.skyHor);
+  PAL_CACHE.sun.setHex(P.pal.sun);
+  PAL_CACHE.fog.setHex(P.pal.fog);
   hemi.color.setHex(P.pal.skyHor);
   hemi.groundColor.setHex(P.pal.rock);
-  skyU.topColor.value.copy(PAL_CACHE.top);
-  skyU.horColor.value.copy(PAL_CACHE.hor);
   skyU.sunColor.value.copy(PAL_CACHE.sun);
   scene.fog.color.copy(PAL_CACHE.fog);
-  scene.fog.near = P.fog[0]; scene.fog.far = P.fog[1];
+  // 雾距拉远一些：山地地形要能被看见，不能被近雾吞掉
+  scene.fog.near = P.fog[0] * 1.5; scene.fog.far = P.fog[1] * 1.6;
   stormPoints.material.color.setHex(P.pal.rock);
-  A.ui.setPlanetChip();
+  A.env.grav = P.grav; A.env.radiation = P.radiation;
+  A.ui && A.ui.setPlanetChip && A.ui.setPlanetChip();
 }
 
 function updateEnv(dt, t) {
@@ -150,14 +155,12 @@ function updateEnv(dt, t) {
 
   const night = 1 - day;
   skyU.night.value = night;
-  const top = PAL_CACHE.top.clone().multiplyScalar(0.35 + 0.65 * day);
-  const hor = PAL_CACHE.hor.clone().lerp(PAL_CACHE.sun, dusk * 0.4).multiplyScalar(0.45 + 0.55 * day);
-  skyU.topColor.value.copy(top);
-  skyU.horColor.value.copy(hor);
+  skyU.topColor.value.copy(_top.copy(PAL_CACHE.top).multiplyScalar(0.35 + 0.65 * day));
+  skyU.horColor.value.copy(_hor.copy(PAL_CACHE.hor).lerp(PAL_CACHE.sun, dusk * 0.4).multiplyScalar(0.45 + 0.55 * day));
   stars.material.opacity = night * 0.9;
-  hemi.intensity = 0.30 + 0.62 * day;
-  sun.intensity = 0.16 + 1.0 * day;
-  scene.fog.color.copy(PAL_CACHE.fog).multiplyScalar(0.35 + 0.65 * day);
+  hemi.intensity = 0.28 + 0.50 * day;
+  sun.intensity = 0.14 + 0.82 * day;
+  scene.fog.color.copy(_fog.copy(PAL_CACHE.fog).multiplyScalar(0.35 + 0.65 * day));
 
   const sa = dayTime * Math.PI * 2 + 0.7;
   const sd = new THREE.Vector3(Math.cos(sa) * 0.75, 0.42 + Math.sin(sa * 0.5) * 0.28, Math.sin(sa) * 0.75).normalize();
@@ -204,7 +207,13 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyJ') A.ui.togglePanel('codex');
   if (e.code === 'KeyM') A.ui.togglePanel('net');
   if (e.code === 'KeyH') A.ui.togglePanel('help');
-  if (e.code === 'KeyG' && gameStarted) A.cycleView();
+  if (e.code === 'KeyG' && gameStarted) A.ui.togglePanel('field');
+  if (e.code === 'KeyK' && gameStarted) A.ui.togglePanel('goals');
+  if (e.code === 'KeyX' && gameStarted) {
+    A.world.scanPulse(elapsed);
+    A.sfx.ok(); A.ui.toast('相位扫描 · 附近矿脉已标出 9 秒');
+  }
+  if (/^Digit[1-7]$/.test(e.code) && gameStarted) A.travel(+e.code.slice(5) - 1);
   if (e.code === 'KeyR') { A.ui.setToolMode(A.player.toolMode === 'dig' ? 'fill' : 'dig'); A.sfx.blip(); }
   if (e.code === 'KeyT' && gameStarted && !A.player.dead) A.player.placeTether();
   if (e.code === 'KeyF' && gameStarted) interact();
@@ -411,32 +420,41 @@ A.place = {
   }
 };
 
-// ---------------- 存档 ----------------
-const SAVE_KEY = 'astra4d.save.v2';
-let save = { v: 2, seed: 1, pi: 0, dayTime: 0.18, view: 'xyz', player: null, planets: {} };
+// ---------------- 存档（v3：单一连续世界，w 就是存档坐标） ----------------
+const SAVE_KEY = 'astra4d.save.v3';
+const SAVE_KEY_OLD = 'astra4d.save.v2';
+const emptyWorld = () => ({ edits: [], modules: [], tethers: [], ruins: [] });
+let save = { v: 3, seed: 1, w: 0, dayTime: 0.18, player: null, world: emptyWorld(), goals: {} };
 A.save = save;
 
-function planetState(pid) {
-  if (!save.planets[pid]) save.planets[pid] = { edits: [], modules: [], tethers: [], ruins: [], x: 0, z: 0 };
-  return save.planets[pid];
+function migrateV2(raw) {
+  const s = JSON.parse(raw);
+  const pi = M.clamp(s.pi || 0, 0, A.F4.W_MAX);
+  const st = (s.planets && s.planets[A.PLANETS[pi].id]) || {};
+  const p = s.player ? Object.assign({}, s.player, {
+    w: pi,
+    tethers: (s.player.tethers || []).map((t) => ({ x: t.x, z: t.z, w: pi }))
+  }) : null;
+  // 旧存档里每个行星有独立的编辑层/模块；迁移时只带上当时所在的那颗
+  return {
+    v: 3, seed: s.seed || 1, w: pi, dayTime: s.dayTime || 0.18,
+    player: p, goals: {},
+    world: { edits: st.edits || [], modules: st.modules || [], tethers: st.tethers || [], ruins: st.ruins || [] }
+  };
 }
-function capturePlanet() {
-  const p = A.world.planet;
-  const st = planetState(p.id);
-  st.edits = A.world.serializeEdits();
-  st.modules = A.build.serialize();
-  st.tethers = A.player.tethers.map((t) => ({ x: +t.x.toFixed(2), z: +t.z.toFixed(2), w: +t.w.toFixed(3) }));
-  st.ruins = A.ruins.serialize();
-  st.x = +A.player.x.toFixed(2);
-  st.z = +A.player.z.toFixed(2);
-  save.player = A.player.serialize();
-}
+
 function writeSave(silent) {
   try {
-    capturePlanet();
-    save.pi = A.world.state.pi;
+    save.w = A.player.w;
     save.dayTime = dayTime;
-    save.view = A.view.id;
+    save.world = {
+      edits: A.world.serializeEdits(),
+      modules: A.build.serialize(),
+      tethers: A.player.tethers.map((t) => ({ x: +t.x.toFixed(2), z: +t.z.toFixed(2), w: +t.w.toFixed(3) })),
+      ruins: A.ruins.serialize()
+    };
+    save.player = A.player.serialize();
+    save.goals = A.goals ? A.goals.serialize() : (save.goals || {});
     localStorage.setItem(SAVE_KEY, JSON.stringify(save));
     if (!silent) A.ui.toast('已保存');
     return true;
@@ -444,107 +462,78 @@ function writeSave(silent) {
 }
 A.writeSave = writeSave;
 
-function bootPlanet(pi, edits, spawnAt) {
-  const seed = save.seed + pi * 7919;
-  A.world.setPlanet(pi, seed, edits);
-  applyPlanetLook();
-  if (spawnAt) { A.player.x = spawnAt.x; A.player.z = spawnAt.z; }
+/** 载入 / 新开局：先填好地形网格，再重锚所有物体（height 读网格顶点） */
+function bootWorld() {
+  const w = M.clamp(save.w || 0, 0, A.F4.W_MAX);
+  const st = save.world || emptyWorld();
+  A.player.w = w; A.player.wTarget = null;
+  A.world.setW(w);
+  A.player.x = (save.player && save.player.x) || 5.5;
+  A.player.z = (save.player && save.player.z) || 5.5;
+  A.player.mount = null;
+  A.world.update(w, A.player.x, A.player.z, false, true);
+  A.build.load(st.modules || []);
+  A.world.rebuildAll(save.seed, st.edits || []);
+  A.world.rebuild(w);
+  if (save.player) A.player.loadState(save.player);
   else {
-    const hab = A.build.habitat;
-    A.player.x = hab ? hab.x + 4.5 : 4.5;
-    A.player.z = hab ? hab.z + 4.5 : 4.5;
+    A.player.inv = { compound: 3, resin: 3, organic: 2 };
+    A.player.bytes = 0; A.player.unlocked = [];
+    A.player.soil = 8; A.player.soilMax = 12;
+    A.player.oxygen = A.player.oxygenMax = 100; A.player.health = 100;
   }
-  A.player.w = 0;
-  A.player.y = A.world.height(A.player.x, A.player.z, 0) + 0.6;
+  A.player.w = w; A.player.wTarget = null; A.world.setW(w);
+  A.player.setTethers(st.tethers || []);
+  A.player.y = A.world.height(A.player.x, A.player.z, w) + 0.6;
   A.player.vy = 0;
-  A.world.update(A.player.w, A.player.x, A.player.z, false);
+  if (A.ruins && st.ruins && A.ruins.applyLooted) A.ruins.applyLooted(st.ruins);
+  if (A.goals) A.goals.load(save.goals || {});
+  dayTime = save.dayTime || 0.18;
+  applyPlanetLook();
+  A.world.update(w, A.player.x, A.player.z, false, true);
   writeSave(true);
 }
 
-A.travel = function (pi) {
-  if (pi === A.world.state.pi) return;
-  capturePlanet();
-  const fade = $('fx-fade');
-  fade.classList.add('show');
+/** 星图 / 世界线轨道：设定目标，玩家沿 w 平滑滑过去（会经过中间行星） */
+A.travel = function (target) {
+  if (!gameStarted) return;
+  const t = M.clamp(target, 0, A.F4.W_MAX);
+  A.player.wTarget = t;
   A.sfx.blip();
-  setTimeout(() => {
-    const st = planetState(A.PLANETS[pi].id);
-    A.build.load(st.modules);
-    A.world.setPlanet(pi, save.seed + pi * 7919, st.edits);
-    applyPlanetLook();
-    A.player.x = st.x || 4.5;
-    A.player.z = st.z || 4.5;
-    A.player.w = 0;
-    A.player.y = A.world.height(A.player.x, A.player.z, 0) + 0.6;
-    A.player.mount = null;
-    A.player.setTethers(st.tethers || []);
-    A.player.oxygen = A.player.oxygenMax;
-    A.world.update(A.player.w, A.player.x, A.player.z, false);
-    setTimeout(() => fade.classList.remove('show'), 160);
-    A.ui.toast('降落 · ' + A.PLANETS[pi].name);
-    writeSave(true);
-  }, 420);
+  A.ui.toast('航线 → ' + A.PLANETS[Math.round(t)].name + ' · 沿世界线平滑滑移');
 };
+A.setWorldTarget = A.travel;
 
-// ---------------- 空间视图 ----------------
+// ---------------- 空间视图：降级为「四维场」可视化面板 ----------------
+// 旧版 setView 会重排噪声槽位并重建整个世界，那是假的四维切片。
+// 现在世界只有一个 4D 场，G / 右上角按钮打开真实场的可视化投影。
 A.setView = function (id, silent) {
-  const v = A.parseView(id);
-  A.view = v;
-  A.world.rebuild();
-  A.player.y = A.world.height(A.player.x, A.player.z, A.player.w) + 1.1;
-  A.player.vy = 0;
-  A.player.grounded = false;
-  save.view = v.id;
-  A.ui.setViewLabel();
-  if (!silent) {
-    A.sfx.ok();
-    A.ui.toast('空间视图 ' + v.id.toUpperCase() + ' · 现在滑移 ' + v.phase.toUpperCase() + ' 轴');
-    A.burst(A.player.x, A.player.y + 1, A.player.z, new THREE.Color(0x8d78d6), 34, 3.4);
-  }
-  if (gameStarted) writeSave(true);
+  save.view = 'xyz';
+  if (A.ui && A.ui.setViewLabel) A.ui.setViewLabel();
+  if (!silent && A.ui) A.ui.openPanel('field');
 };
-A.cycleView = function () {
-  const i = A.VIEW_IDS.indexOf(A.view.id);
-  A.setView(A.VIEW_IDS[(i + 1) % A.VIEW_IDS.length]);
-};
+A.cycleView = function () { if (A.ui) A.ui.togglePanel('field'); };
 
 // ---------------- 新游戏 / 继续 ----------------
 let gameStarted = false;
 function startNew() {
-  save = { v: 2, seed: Math.floor(Math.random() * 900000) + 1000, pi: 0, dayTime: 0.18, player: null, planets: {} };
+  save = { v: 3, seed: Math.floor(Math.random() * 900000) + 1000, w: 0, dayTime: 0.18, player: null, world: emptyWorld(), goals: {} };
   A.save = save;
-  A.build.load([]);
-  bootPlanet(0, [], { x: 5.5, z: 5.5 });
-  A.player.inv = { compound: 3, resin: 3, organic: 2 };
-  A.player.bytes = 0;
-  A.player.unlocked = [];
-  A.player.soil = 8;
-  A.player.soilMax = 12;
-  A.player.oxygen = 100;
-  A.player.oxygenMax = 100;
-  A.player.health = 100;
+  bootWorld();
   A.setView('xyz', true);
   begin();
 }
 function continueGame() {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) { startNew(); return; }
-    const s = JSON.parse(raw);
-    save = Object.assign({ v: 2, planets: {} }, s);
+    const old = localStorage.getItem(SAVE_KEY_OLD);
+    if (!raw && !old) { startNew(); return; }
+    save = raw ? Object.assign({ v: 3, world: emptyWorld(), goals: {} }, JSON.parse(raw)) : migrateV2(old);
     A.save = save;
-    const pi = save.pi || 0;
-    const st = planetState(A.PLANETS[pi].id);
-    A.build.load(st.modules || []);
-    A.world.setPlanet(pi, save.seed + pi * 7919, st.edits || []);
-    applyPlanetLook();
-    if (save.player) A.player.loadState(save.player);
-    else bootPlanet(pi, st.edits || []);
-    dayTime = save.dayTime || 0.18;
-    A.setView(save.view || 'xyz', true);
-    A.world.update(A.player.w, A.player.x, A.player.z, false);
+    bootWorld();
+    A.setView('xyz', true);
     begin();
-  } catch (e) { startNew(); }
+  } catch (e) { console.warn('[astra] save migrate failed', e); startNew(); }
 }
 function begin() {
   $('title').classList.add('gone');
@@ -552,6 +541,7 @@ function begin() {
   gameStarted = true;
   A.ui.setToolMode('dig');
   A.ui.refreshHUD();
+  if (A.viz && A.viz.start) A.viz.start();
   A.sfx.ok();
 }
 
@@ -571,6 +561,8 @@ function animate() {
     A.player.update(dt, input, elapsed);
     A.place.update();
   }
+  A.world.setW(A.player.w);
+  applyPlanetLook();
   A.player.updateCamera(dt);
   updateEnv(dt, elapsed);
 
@@ -596,6 +588,8 @@ function animate() {
     A.world.updateNodes(A.player.w, elapsed, dt, A.player.x, A.player.z);
     A.world.updateSamples(A.player.w, elapsed, dt, A.player.x, A.player.z);
     A.net.tick(dt);
+    if (A.goals) A.goals.tick(dt, elapsed);
+    if (A.viz) A.viz.tick(dt, elapsed);
     A.ui.update(dt);
 
     saveTick += dt;
@@ -623,27 +617,36 @@ A.ruins.init(scene);
 A.build.init(scene);
 A.player.init(scene);
 A.net.init(scene);
+if (A.viz) A.viz.init();
+if (A.goals) A.goals.init();
 A.ui.init();
-A.world.setPlanet(0, 1337, []);
-A.build.load([]);
-applyPlanetLook();
+A.world.setW(0);
 A.player.x = 5.5; A.player.z = 5.5;
+A.world.update(0, 5.5, 5.5, false, true);
+A.world.rebuildAll(1337, []);
 A.player.y = A.world.height(5.5, 5.5, 0) + 0.6;
-A.setView(save.view || 'xyz', true);
-A.world.update(0, 5.5, 5.5, false);
+applyPlanetLook();
+A.setView('xyz', true);
 initTouch();
 resize();
 animate();
 
 $('start-btn').addEventListener('click', startNew);
 $('continue-btn').addEventListener('click', continueGame);
-const hasSave = !!localStorage.getItem(SAVE_KEY);
+const hasSave = !!localStorage.getItem(SAVE_KEY) || !!localStorage.getItem(SAVE_KEY_OLD);
 $('continue-btn').classList.toggle('hidden', !hasSave);
 
 window.__astra = {
   A, player: A.player, world: A.world, build: A.build, input, net: A.net,
+  field4: A.F4, goals: A.goals, viz: A.viz,
   start: () => { startNew(); }, continue: () => continueGame(),
   travel: (i) => A.travel(i), place: (id) => A.place.start(id),
+  probe: (x, z, w) => A.F4.probe(x, z, w === undefined ? A.player.w : w),
+  setW: (w) => {
+    A.player.w = M.clamp(w, 0, A.F4.W_MAX);
+    A.player.wVel = 0; A.player.wTarget = null;
+    A.world.setW(A.player.w);
+  },
   get started() { return gameStarted; }
 };
 

@@ -121,7 +121,7 @@ const net = {
   state() {
     const p = A.player;
     return {
-      p: A.world.state.pi, v: A.view.id,
+      p: 0, v: A.view.id,   // v1.1.0：只有一个连续世界，行星由 w 决定
       x: p.x, y: p.y, z: p.z, w: p.w, f: p.facing,
       mv: p.moving ? 1 : 0, hp: p.health, o2: p.oxygen, al: !p.dead
     };
@@ -300,7 +300,7 @@ const net = {
       const st = pr.state;
       const av = pr.av;
       if (!av || !st) continue;
-      const sameWorld = st.p === A.world.state.pi && st.v === A.view.id;
+      const sameWorld = st.v === A.view.id;
       const vis = sameWorld && Math.abs(st.w - p.w) < 2.4 && Math.hypot(st.x - p.x, st.z - p.z) < 260;
       av.visible = vis;
       if (!vis) continue;
@@ -340,8 +340,8 @@ const net = {
       let where = '未同步';
       if (st) {
         const sameView = st.v === A.view.id;
-        const planet = (A.PLANETS[st.p] && A.PLANETS[st.p].name) || '未知';
-        where = planet + ' · ' + String(st.v || '').toUpperCase() + (sameView ? '' : '（不同切片）');
+        const where4 = A.F4.at(st.w || 0).shortName || ('w ' + (st.w || 0).toFixed(2));
+        where = where4 + ' · w ' + (st.w || 0).toFixed(2) + (sameView ? '' : '（旧版本）');
       }
       out.push({ name: pr.name, host: pr.host, where, hp: st ? st.hp : null });
     }

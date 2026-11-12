@@ -5,10 +5,11 @@
 'use strict';
 const M = A.M;
 
-const W_LIMIT = 6.5;
+// v1.1.0：w 不再是无量纲「相位」，而是贯穿七颗行星的世界线坐标 [0, 6]
+const W_LIMIT = A.F4.W_MAX;
 
 const player = {
-  x: 0, y: 4, z: 0, w: 0, wVel: 0,
+  x: 0, y: 4, z: 0, w: 0, wVel: 0, wTarget: null,
   vy: 0, grounded: true, facing: 0,
   oxygen: 100, oxygenMax: 100, health: 100,
   radiated: false, suited: false, inNetwork: false,
@@ -448,12 +449,26 @@ function update(dt, input, time) {
   if (player.mount) {
     driveVehicle(dt, input);
   } else {
-    // 相位滑移
+    // 世界线滑移：Q/E 手动；星图 / 世界线轨道设定 wTarget 后自动缓动，
+    // 会真实地「经过」中间的每一颗行星，而不是瞬移。
     const wIn = (input && input.wUp ? 1 : 0) - (input && input.wDown ? 1 : 0);
-    player.wVel += (wIn * 1.35 - player.wVel) * (1 - Math.exp(-dt * 6.5));
+    if (wIn !== 0) {
+      player.wTarget = null;
+      player.wVel += (wIn * 0.95 - player.wVel) * (1 - Math.exp(-dt * 6.5));
+    } else if (player.wTarget !== null) {
+      const d = player.wTarget - player.w;
+      player.wVel += (M.clamp(d * 2.2, -1.05, 1.05) - player.wVel) * (1 - Math.exp(-dt * 5));
+      if (Math.abs(d) < 0.004 && Math.abs(player.wVel) < 0.025) {
+        player.w = player.wTarget; player.wVel = 0; player.wTarget = null;
+        A.ui && A.ui.toast('抵达 · ' + A.F4.cur.shortName);
+      }
+    } else {
+      player.wVel += (0 - player.wVel) * (1 - Math.exp(-dt * 6.5));
+    }
     player.w += player.wVel * dt;
     if (player.w > W_LIMIT) { player.w = W_LIMIT; player.wVel = 0; }
-    if (player.w < -W_LIMIT) { player.w = -W_LIMIT; player.wVel = 0; }
+    if (player.w < 0) { player.w = 0; player.wVel = 0; }
+    A.world.setW(player.w);
 
     _fwd.set(-Math.sin(cam.theta), 0, -Math.cos(cam.theta));
     _right.set(-_fwd.z, 0, _fwd.x);
@@ -462,7 +477,10 @@ function update(dt, input, time) {
     if (mz) _move.addScaledVector(_fwd, mz);
     if (mx) _move.addScaledVector(_right, mx);
     player.sprinting = !!(input && input.sprint);
-    const speed = player.sprinting ? 8.6 : 5.2;
+    // 坡度影响通行：陡坡减速，让真实的山地有了玩法意义
+    const sl = A.F4.slope(player.x, player.z, player.w, A.F4.cur);
+    const slopeFactor = 1 - M.smoothstep(sl, 0.5, 1.75) * 0.55;
+    const speed = (player.sprinting ? 8.6 : 5.2) * slopeFactor;
     player.moving = _move.lengthSq() > 0.0001;
     if (player.moving) {
       _move.normalize().multiplyScalar(speed * dt);
@@ -494,8 +512,10 @@ function update(dt, input, time) {
   // 氧气 + 相位辐射（0.8.0）：深层相位无防护时氧气消耗加倍、缓慢掉血；防护服免疫
   player.inNetwork = A.build.oxygenAt(player.x, player.z, player.w);
   player.suited = count('hazmat') > 0;
-  player.radiated = Math.abs(player.w) > A.RADIATION_W && !player.suited;
-  const o2Rate = player.radiated ? A.RADIATION_O2 : 1;
+  // 辐射来自世界线末段（格拉西欧 → 阿特洛克斯），强度连续插值
+  const rad = A.F4.cur.radiation;
+  player.radiated = rad > 0.5 && !player.suited;
+  const o2Rate = 1 + rad * (A.RADIATION_O2 - 1) * (player.suited ? 0 : 1);
   if (player.inNetwork) player.oxygen = Math.min(player.oxygenMax, player.oxygen + 16 * dt);
   else player.oxygen = Math.max(0, player.oxygen - 2.1 * o2Rate * dt);
   if (player.oxygen <= 0) {
@@ -506,7 +526,7 @@ function update(dt, input, time) {
   }
   // 辐射伤害：离网时每秒掉血（氧气管网内可以安全深入）
   if (player.radiated && !player.inNetwork) {
-    player.health = Math.max(0, player.health - A.RADIATION_DMG * dt);
+    player.health = Math.max(0, player.health - A.RADIATION_DMG * rad * dt);
     if (player.health <= 0) { die(); return; }
   }
 

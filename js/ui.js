@@ -36,10 +36,10 @@ function init() {
   document.querySelectorAll('[data-mode]').forEach((b) => {
     b.addEventListener('click', () => setToolMode(b.dataset.mode));
   });
-  // 空间视图
-  const cycleView = () => { if (A.cycleView) A.cycleView(); };
-  if (el['view-btn']) el['view-btn'].addEventListener('click', cycleView);
-  if (el['btn-view']) el['btn-view'].addEventListener('click', cycleView);
+  // 四维场面板（旧版「转换空间视图」已改为真实的 4D 场可视化）
+  const openField = () => togglePanel('field');
+  if (el['view-btn']) el['view-btn'].addEventListener('click', openField);
+  if (el['btn-view']) el['btn-view'].addEventListener('click', openField);
   // 通用委托：建造 / 打印 / 研究 / 模块动作
   el['printer-list'].addEventListener('click', (e) => craftClick(e, 0));
   el['build-list'].addEventListener('click', (e) => craftClick(e, 1));
@@ -107,24 +107,19 @@ function refreshHUD() {
     el['soil-fill'].style.width = (p.soil / p.soilMax * 100) + '%';
     lastSoil = soil;
   }
-  const wStr = (p.w >= 0 ? '+' : '') + p.w.toFixed(2);
-  if (wStr !== lastW) {
-    el['w-readout'].textContent = wStr;
-    el['phase-fill'].style.left = (50 + (p.w / 6.5) * 50) + '%';
-    lastW = wStr;
-  }
+  // w 读数与世界线指针由 viz 统一绘制（0~6 的七颗行星坐标）
   if (p.bytes !== lastBytes) { el['bytes-num'].textContent = A.M.fmt(p.bytes); lastBytes = p.bytes; }
   // 相位辐射提示（0.8.0）：0 不显示 / 1 辐射中 / 2 防护服生效
   if (el['rad-chip']) {
-    const deep = Math.abs(p.w) > A.RADIATION_W;
+    const deep = A.F4.cur.radiation > 0.5;
     const key = deep ? (p.suited ? 2 : 1) : 0;
     if (key !== lastRad) {
       lastRad = key;
       el['rad-chip'].classList.toggle('hidden', key === 0);
       el['rad-chip'].classList.toggle('safe', key === 2);
       el['rad-chip'].textContent = key === 1
-        ? '⚠ 相位辐射 · 氧气 ×2、持续掉血'
-        : key === 2 ? '相位防护服 · 深层相位安全' : '';
+        ? '⚠ 世界线辐射带 · 氧气消耗上升、持续掉血'
+        : key === 2 ? '相位防护服 · 辐射带安全' : '';
     }
   }
 }
@@ -136,22 +131,24 @@ function setInteract(text) {
   el.interact.classList.toggle('show', !!text);
 }
 
-// 空间视图标签：相位轴跟着变，按钮与 HUD 同步
+// v1.1.0：HUD 标签统一指向真实 4D 场与世界线
 function setViewLabel() {
-  const v = A.view;
-  const id = v.id.toUpperCase(), ph = v.phase.toUpperCase();
-  if (el['phase-label']) el['phase-label'].textContent = '相位轴 ' + ph;
-  if (el['view-tag']) el['view-tag'].textContent = v.a.toUpperCase() + ' ' + v.b.toUpperCase() + ' ' + v.c.toUpperCase();
+  if (el['phase-label']) el['phase-label'].textContent = '世界线 W';
+  if (el['view-tag']) el['view-tag'].textContent = 'X Y Z W';
   const axis = document.querySelector('.view-axis');
-  if (axis) axis.textContent = id;
-  if (el['btn-wup']) el['btn-wup'].textContent = ph + ' +';
-  if (el['btn-wdown']) el['btn-wdown'].textContent = ph + ' −';
-  if (el['view-btn']) el['view-btn'].title = '转换空间视图（G）· 当前 ' + id + '，相位轴 ' + ph;
+  if (axis) axis.textContent = 'F(X,Y,Z,W)';
+  if (el['btn-wup']) el['btn-wup'].textContent = 'W +';
+  if (el['btn-wdown']) el['btn-wdown'].textContent = 'W −';
+  if (el['view-btn']) el['view-btn'].title = '四维场 F(X,Y,Z,W) 的真实切片（G）';
 }
 
+let lastChip = '';
 function setPlanetChip() {
-  const P = A.world.planet;
-  el['planet-chip'].innerHTML = `<b>${P.name}</b><span>${P.en}</span><i>${P.type}</i>`;
+  const P = A.F4.cur;
+  const key = P.shortName + '|' + P.type + '|' + Math.round(A.player.w * 20);
+  if (key === lastChip) return;
+  lastChip = key;
+  el['planet-chip'].innerHTML = `<b>${P.shortName}</b><span>${P.en}</span><i>${P.type}</i><em>w ${A.player.w.toFixed(2)}</em>`;
 }
 
 function setToolMode(mode) {
@@ -175,6 +172,9 @@ function openPanel(name, data) {
   if (name === 'travel') renderTravel();
   if (name === 'codex') renderCodex();
   if (name === 'net') renderNet();
+  if (name === 'travel') { /* renderTravel 下面已调用 */ }
+  if (name === 'field' && A.viz) { A.viz.drawField(); A.viz.dirty = true; }
+  if (name === 'goals' && A.viz) A.viz.renderGoals();
   A.sfx.blip();
 }
 function closePanels() {
@@ -594,25 +594,29 @@ function renderNet() {
   el['net-log'].scrollTop = el['net-log'].scrollHeight;
 }
 
-// 星图
+// 星图 = 世界线的七颗锚点；点击只设定目标，玩家沿 w 平滑滑过去
 function renderTravel() {
+  const w = A.player.w;
   el['travel-list'].innerHTML = A.PLANETS.map((P, i) => {
-    const cur = i === A.world.state.pi;
-    return `<button class="planet ${cur ? 'cur' : ''}" data-go="${i}">
+    const cur = Math.abs(w - i) < 0.12;
+    const c1 = '#' + P.pal.mid.toString(16).padStart(6, '0');
+    const c2 = '#' + P.pal.high.toString(16).padStart(6, '0');
+    return `<button class="planet ${cur ? 'cur' : ''}" data-go="${i}" style="--pl:${c1};--pl2:${c2}">
+      <span class="pl-orb"></span>
       <span class="pn">${P.name}<i>${P.en}</i></span>
       <span class="pt">${P.type} · 难度${P.diff}</span>
       <span class="pd">☀ ${P.sun.toFixed(2)} · 风 ${P.wind.toFixed(2)} · 重力 ${P.grav.toFixed(2)}</span>
+      <span class="pl-w">w = ${i}</span>
       ${cur ? '<span class="badge">当前所在</span>' : ''}
     </button>`;
-  }).join('');
+  }).join('') +
+    '<div class="travel-note">也可直接拖动屏幕下方的<b>世界线轨道</b>，或按数字键 <b>1–7</b> 设定航线。滑移会真实经过中间的每一颗行星，地形、天空与资源连续过渡。</div>';
 }
 function travelClick(e) {
   const b = e.target.closest('[data-go]');
   if (!b) return;
-  const i = +b.dataset.go;
-  if (i === A.world.state.pi) { toast('已经在这颗行星上了'); return; }
   closePanels();
-  A.travel(i);
+  A.travel(+b.dataset.go);
 }
 
 // 死亡

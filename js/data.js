@@ -89,7 +89,9 @@ const ITEMS = {
   tether:   { name: '系绳桩', en: 'Tether',  cat: 'special', color: 0x9be8ff, bytes: 0 },
   beacon:   { name: '信标',   en: 'Beacon',  cat: 'special', color: 0xffd166, bytes: 0 },
   canister: { name: '罐',     en: 'Canister', cat: 'special', color: 0x8fe0b0, bytes: 0 },
-  hazmat:   { name: '相位防护服', en: 'Phase Suit', cat: 'special', color: 0xb97fe0, bytes: 0 }
+  hazmat:   { name: '相位防护服', en: 'Phase Suit', cat: 'special', color: 0xb97fe0, bytes: 0 },
+  // v1.1.0：只长在两颗行星之间的「相位异常带」，拿去研究舱换大量字节
+  anomaly:  { name: '相位结晶', en: 'Phase Crystal', cat: 'special', color: 0xc58bff, bytes: 900, shape: 'prism', glow: 1 }
 };
 A.ITEMS = ITEMS;
 A.item = (id) => ITEMS[id] || { name: id, cat: 'raw', color: 0xcccccc, bytes: 0 };
