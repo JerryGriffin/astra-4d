@@ -4,7 +4,7 @@
 
 > **[▶ 在线试玩](https://jerrygriffin.github.io/astra-4d/)** · 打开浏览器就能玩，电脑与手机都适配
 >
-> 当前版本 **1.1.0**（2026-11-12，四维演算重做），改动记录见 [CHANGELOG.md](CHANGELOG.md)。
+> 当前版本 **1.1.1**（2026-11-12，四维演算重做 + 缓存兜底），改动记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 玩法
 
